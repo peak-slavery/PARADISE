@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Paradise Engine</title>
+  <desc id="desc">An animated neon control plane connecting eight Discord operations bots.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080B18"/>
+      <stop offset="0.55" stop-color="#12163A"/>
+      <stop offset="1" stop-color="#081F31"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#A78BFA"/>
+      <stop offset="0.5" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#67E8F9"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" fill="none" stroke="#94A3B8" stroke-opacity=".09"/>
+    </pattern>
+    <style>
+      .pulse { animation: pulse 3.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      .orbit { animation: orbit 16s linear infinite; transform-origin: 850px 238px; }
+      .dash { stroke-dasharray: 12 16; animation: dash 2.4s linear infinite; }
+      @keyframes pulse { 0%,100% { opacity:.45; transform:scale(.92) } 50% { opacity:1; transform:scale(1.08) } }
+      @keyframes orbit { to { transform: rotate(360deg) } }
+      @keyframes dash { to { stroke-dashoffset:-56 } }
+      @media (prefers-reduced-motion: reduce) { .pulse,.orbit,.dash { animation:none } }
+    </style>
+  </defs>
+  <rect width="1200" height="520" rx="34" fill="url(#bg)"/>
+  <rect width="1200" height="520" rx="34" fill="url(#grid)"/>
+  <ellipse cx="860" cy="232" rx="260" ry="220" fill="#7C3AED" opacity=".18" filter="url(#soft)"/>
+  <ellipse cx="1060" cy="390" rx="190" ry="130" fill="#06B6D4" opacity=".13" filter="url(#soft)"/>
+
+  <g transform="translate(86 86)">
+    <rect x="0" y="0" width="92" height="92" rx="26" fill="url(#violet)" opacity=".25" filter="url(#glow)"/>
+    <rect x="4" y="4" width="84" height="84" rx="24" fill="url(#violet)" stroke="#C4B5FD" stroke-opacity=".5"/>
+    <circle cx="46" cy="46" r="25" fill="none" stroke="#FFF" stroke-width="3" stroke-opacity=".52"/>
+    <circle cx="46" cy="46" r="11" fill="#FFF" class="pulse"/>
+  </g>
+  <text x="86" y="238" fill="#F8FAFC" font-family="Inter,Segoe UI,system-ui,sans-serif" font-size="64" font-weight="800" letter-spacing="-3">PARADISE</text>
+  <text x="90" y="290" fill="url(#cyan)" font-family="Inter,Segoe UI,system-ui,sans-serif" font-size="38" font-weight="500" letter-spacing="8">ENGINE</text>
+  <text x="90" y="350" fill="#CBD5E1" font-family="Inter,Segoe UI,system-ui,sans-serif" font-size="18" letter-spacing="1.2">EIGHT BOTS. ONE SECURE CONTROL PLANE.</text>
+  <path d="M90 382H440" stroke="url(#cyan)" stroke-width="2" opacity=".8"/>
+  <circle cx="90" cy="382" r="5" fill="#22D3EE" class="pulse"/>
+
+  <g opacity=".9">
+    <circle cx="850" cy="238" r="92" fill="#0F172A" stroke="#A78BFA" stroke-opacity=".55" stroke-width="2"/>
+    <circle cx="850" cy="238" r="126" fill="none" stroke="#22D3EE" stroke-opacity=".3" stroke-width="1" stroke-dasharray="4 12"/>
+    <circle cx="850" cy="238" r="162" fill="none" stroke="#A78BFA" stroke-opacity=".18" stroke-width="1" stroke-dasharray="2 18" class="orbit"/>
+    <path d="M850 146L930 192V284L850 330L770 284V192Z" fill="url(#violet)" opacity=".2" stroke="#C4B5FD" stroke-width="2"/>
+    <circle cx="850" cy="238" r="33" fill="url(#violet)" filter="url(#glow)" class="pulse"/>
+    <circle cx="850" cy="238" r="13" fill="#FFF"/>
+    <text x="850" y="383" text-anchor="middle" fill="#E2E8F0" font-family="Inter,Segoe UI,system-ui,sans-serif" font-size="15" letter-spacing="3">SECURE HUB</text>
+  </g>
+
+  <g fill="none" stroke="url(#cyan)" stroke-width="2" opacity=".7" class="dash">
+    <path d="M755 191C680 136 635 130 570 148"/>
+    <path d="M755 285C680 340 635 346 570 328"/>
+    <path d="M945 191C1000 152 1045 145 1090 160"/>
+    <path d="M945 285C1000 324 1045 331 1090 316"/>
+  </g>
+  <g fill="#22D3EE" class="pulse">
+    <circle cx="570" cy="148" r="5"/><circle cx="570" cy="328" r="5"/><circle cx="1090" cy="160" r="5"/><circle cx="1090" cy="316" r="5"/>
+  </g>
+  <text x="1130" y="490" text-anchor="end" fill="#64748B" font-family="monospace" font-size="12">v0.1 • SECURITY-FIRST DISCORD OPERATIONS</text>
+</svg>
