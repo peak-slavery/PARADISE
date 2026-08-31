@@ -1,0 +1,22 @@
+{
+  "name": "@eiflow/bot-shanks",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ei Flow — Shanks (moderation — warn, mute, ban, purge, automod)",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "deploy:commands": "tsx scripts/deploy-commands.ts"
+  },
+  "dependencies": {
+    "@eiflow/shared": "*",
+    "discord.js": "^14.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
