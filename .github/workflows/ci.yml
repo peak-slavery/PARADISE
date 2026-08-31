@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # Every bot is an isolated service, so typecheck them independently: a type
+  # error in one bot must never block another from deploying.
+  typecheck:
+    name: typecheck shared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w @eiflow/shared
+
+  typecheck-bots:
+    name: typecheck ${{ matrix.bot }}
+    runs-on: ubuntu-latest
+    needs: typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        bot:
+          - '@eiflow/bot-shanks'
+          - '@eiflow/bot-sanji'
+          - '@eiflow/bot-zoro'
+          - '@eiflow/bot-boahancock'
+          - '@eiflow/bot-nami'
+          - '@eiflow/bot-luffy'
+          - '@eiflow/bot-niko-robin'
+          - '@eiflow/bot-cyrene'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w ${{ matrix.bot }}
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  # Blocks the merge on any high or critical advisory.
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
+  build-dashboard:
+    name: build dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # `next build` generates next-env.d.ts as part of the build, which is why
+      # the dashboard is built rather than only typechecked.
+      - run: npm run build -w @eipoint/dashboard
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Ei Flow">
+  <title>Ei Flow</title>
+  <defs>
+    <linearGradient id="ef-mark-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6D28D9"/>
+      <stop offset="0.55" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#ef-mark-bg)"/>
+
+  <!-- "Ei" as three strokes that bend into a current: structure + motion -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round">
+    <path d="M17 18v28"/>
+    <path d="M17 18c9-3 17 3 26 0"/>
+    <path d="M17 32c7-3 13 3 21 0"/>
+    <path d="M17 46c9-3 17 3 26 0"/>
+  </g>
+
+  <circle cx="47" cy="18" r="3.4" fill="#22D3EE"/>
+</svg>
