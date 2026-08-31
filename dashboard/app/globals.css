@@ -1,0 +1,319 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===========================================================================
+   Ei Point — design tokens
+   Light theme only. Every surface is a very light warm grey; every shadow is
+   a pair (bright top-left highlight + soft bottom-right cast) so controls read
+   as physically extruded from the page rather than floating on it.
+   =========================================================================== */
+
+@layer base {
+  :root {
+    /* Self-hosted-looking system stack: no network fetch at build time. */
+    --font-sans: 'Inter var', 'Inter', 'Segoe UI Variable', 'Segoe UI';
+
+    /* Surfaces */
+    --pe-bg: #eef1f6;
+    --pe-bg-tint-a: #e8edf7;
+    --pe-bg-tint-b: #f3f6fb;
+    --pe-surface: #eef1f6;
+    --pe-surface-raised: #f4f6fa;
+    --pe-surface-sunken: #e4e8f0;
+    --pe-line: #d6dce7;
+
+    /* Neumorphic shadow pair */
+    --neu-light: rgba(255, 255, 255, 0.92);
+    --neu-dark: rgba(148, 163, 189, 0.5);
+    --neu-dark-strong: rgba(129, 145, 173, 0.62);
+
+    /* Glass */
+    --glass-bg: rgba(255, 255, 255, 0.58);
+    --glass-bg-strong: rgba(255, 255, 255, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.75);
+    --glass-edge: rgba(31, 41, 61, 0.07);
+    --glass-blur: 18px;
+
+    /* Text */
+    --pe-ink: #1e2430;
+    --pe-ink-soft: #4a5567;
+    --pe-ink-muted: #6e7a8d;
+    --pe-ink-faint: #9aa5b5;
+
+    /* Accent */
+    --pe-accent: #5865f2;
+    --pe-accent-soft: #8590f8;
+    --pe-accent-ink: #3b46c4;
+
+    /* Focus ring — visible on every surface in the app */
+    --pe-ring: rgba(88, 101, 242, 0.55);
+
+    color-scheme: light;
+  }
+
+  * {
+    border-color: var(--pe-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--pe-bg);
+    color: var(--pe-ink);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Consistent, high-contrast focus ring everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--pe-accent);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+
+  ::selection {
+    background: rgba(88, 101, 242, 0.22);
+  }
+
+  /* Scrollbars tuned for the light surface. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 189, 0.38);
+    border: 3px solid var(--pe-bg);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 189, 0.6);
+  }
+}
+
+/* ===========================================================================
+   Shadow primitives
+   Declared once, consumed by Tailwind's `shadow-*` scale (see
+   tailwind.config.ts) and by the utilities below.
+   =========================================================================== */
+
+:root {
+  --neu-shadow-sm: 4px 4px 8px var(--neu-dark), -4px -4px 8px var(--neu-light);
+  --neu-shadow: 8px 8px 18px var(--neu-dark), -8px -8px 18px var(--neu-light);
+  --neu-shadow-lg: 14px 14px 32px var(--neu-dark), -14px -14px 32px var(--neu-light);
+  --neu-shadow-inset: inset 5px 5px 10px var(--neu-dark), inset -5px -5px 10px var(--neu-light);
+  --neu-shadow-inset-sm: inset 3px 3px 6px var(--neu-dark), inset -3px -3px 6px var(--neu-light);
+  --glass-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.9) inset, 0 8px 28px -12px rgba(31, 41, 61, 0.18);
+  --glass-shadow-lg: 0 1px 0 0 rgba(255, 255, 255, 0.95) inset,
+    0 24px 60px -22px rgba(31, 41, 61, 0.28);
+}
+
+/* ===========================================================================
+   Reusable utilities
+   =========================================================================== */
+
+@layer utilities {
+  /* --- Neumorphism ------------------------------------------------------- */
+
+  /* Raised: the default for cards, panels and idle controls. */
+  .neu-raised {
+    background-color: var(--pe-surface);
+    box-shadow: var(--neu-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+  }
+
+  .neu-raised-sm {
+    background-color: var(--pe-surface);
+    box-shadow: var(--neu-shadow-sm);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+  }
+
+  .neu-raised-lg {
+    background-color: var(--pe-surface);
+    box-shadow: var(--neu-shadow-lg);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+  }
+
+  /* Pressed / sunken: inputs, active toggles, wells. */
+  .neu-inset {
+    background-color: var(--pe-surface-sunken);
+    box-shadow: var(--neu-shadow-inset);
+    border: 1px solid rgba(148, 163, 189, 0.22);
+  }
+
+  .neu-inset-sm {
+    background-color: var(--pe-surface-sunken);
+    box-shadow: var(--neu-shadow-inset-sm);
+    border: 1px solid rgba(148, 163, 189, 0.2);
+  }
+
+  /* Flat at rest, lifts on hover — for rows and list items. */
+  .neu-hover {
+    background-color: var(--pe-surface);
+    box-shadow: var(--neu-shadow-sm);
+    transition: box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .neu-hover:hover {
+    box-shadow: var(--neu-shadow);
+    transform: translateY(-2px);
+  }
+
+  /* Press-in feedback for buttons. */
+  .neu-press {
+    background-color: var(--pe-surface);
+    box-shadow: var(--neu-shadow-sm);
+    transition: box-shadow 140ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .neu-press:hover {
+    box-shadow: var(--neu-shadow);
+  }
+  .neu-press:active {
+    box-shadow: var(--neu-shadow-inset-sm);
+    transform: translateY(1px);
+  }
+
+  /* Track of a neumorphic switch. */
+  .neu-track {
+    background-color: var(--pe-surface-sunken);
+    box-shadow: var(--neu-shadow-inset-sm);
+  }
+
+  /* --- Glassmorphism ----------------------------------------------------- */
+
+  .glass {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  }
+
+  .glass-strong {
+    background-color: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow-lg);
+    backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(180%);
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(180%);
+  }
+
+  /* Softer variant for large marketing panels sitting on gradients. */
+  .glass-quiet {
+    background-color: rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 10px 34px -18px rgba(31, 41, 61, 0.22);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+  }
+
+  /* Hairline top highlight, the detail that sells the glass edge. */
+  .glass-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+  .glass-sheen::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.95),
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  /* --- Accents ----------------------------------------------------------- */
+
+  .text-gradient-brand {
+    background-image: linear-gradient(100deg, #5865f2 0%, #00d4aa 42%, #9b59b6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .bg-mesh {
+    background-image:
+      radial-gradient(at 12% 8%, rgba(88, 101, 242, 0.18) 0px, transparent 46%),
+      radial-gradient(at 88% 4%, rgba(0, 212, 170, 0.16) 0px, transparent 42%),
+      radial-gradient(at 72% 82%, rgba(155, 89, 182, 0.14) 0px, transparent 48%),
+      radial-gradient(at 20% 88%, rgba(255, 126, 182, 0.14) 0px, transparent 44%);
+  }
+
+  .grid-veil {
+    background-image:
+      linear-gradient(to right, rgba(31, 41, 61, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(31, 41, 61, 0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  }
+
+  /* Hide scrollbar chrome on horizontal tab strips without losing scroll. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  /* Shared shell for the dashboard's primary/secondary buttons. */
+  .btn-neu {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold neu-press text-ink transition-colors;
+  }
+
+  .btn-neu-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold neu-press transition-colors;
+    background-image: linear-gradient(140deg, #6b76f5 0%, #4a56e0 100%);
+    color: #fff;
+    box-shadow: 6px 6px 14px rgba(88, 101, 242, 0.34), -4px -4px 10px rgba(255, 255, 255, 0.85);
+  }
+  .btn-neu-primary:hover {
+    background-image: linear-gradient(140deg, #7a83f7 0%, #5561e8 100%);
+  }
+  .btn-neu-primary:active {
+    box-shadow: inset 3px 3px 8px rgba(48, 58, 168, 0.45);
+  }
+
+  .btn-neu-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold neu-press transition-colors;
+    background-image: linear-gradient(140deg, #f05659 0%, #d93a3d 100%);
+    color: #fff;
+    box-shadow: 6px 6px 14px rgba(237, 66, 69, 0.32), -4px -4px 10px rgba(255, 255, 255, 0.85);
+  }
+
+  /* Data-table chrome. */
+  .neu-table-head {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint;
+  }
+}
+
+/* Respect users who ask for less motion: kill the ambient loops, keep layout. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
