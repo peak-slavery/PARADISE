@@ -1,0 +1,42 @@
+{
+  "name": "eiflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Discord multi-bot ecosystem: 8 isolated bots + Vercel control-plane dashboard",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "bots/*",
+    "dashboard"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "postcss": "^8.5.26",
+    "vite": "^7.3.1"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --max-warnings 0",
+    "test": "npm run test --workspaces --if-present",
+    "audit": "npm audit --audit-level=high",
+    "archive:retention": "node scripts/archive-retention.mjs",
+    "start:moderation": "npm run dev -w @eiflow/bot-shanks",
+    "start:logging": "npm run dev -w @eiflow/bot-sanji",
+    "start:antinuke": "npm run dev -w @eiflow/bot-zoro",
+    "start:welcome": "npm run dev -w @eiflow/bot-boahancock",
+    "start:levelup": "npm run dev -w @eiflow/bot-nami",
+    "start:cardgame": "npm run dev -w @eiflow/bot-luffy",
+    "start:search": "npm run dev -w @eiflow/bot-niko-robin",
+    "start:ai": "npm run dev -w @eiflow/bot-cyrene"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}
