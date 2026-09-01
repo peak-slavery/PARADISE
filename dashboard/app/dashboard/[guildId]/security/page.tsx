@@ -1,4 +1,5 @@
 import { SecurityTable } from '@/components/dashboard/SecurityTable';
+import { requireGuildAccess } from '@/lib/authz';
 import { fetchSecurityEvents } from '@/lib/data/security';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,9 @@ export default async function SecurityPage({
   params: Promise<{ guildId: string }>;
 }) {
   const { guildId } = await params;
+  // Authorize here, not only in the layout: Next renders layout and page
+  // concurrently, so a layout-level notFound() does not stop this read.
+  await requireGuildAccess(guildId);
   const { events, demo } = await fetchSecurityEvents(guildId, { limit: 60 });
 
   return (

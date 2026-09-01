@@ -42,8 +42,19 @@ export function verifyRequest(
   if (!timestampHeader || !signatureHeader) return { ok: false, reason: 'missing_headers' };
 
   const now = Math.floor(Date.now() / 1000);
+
+  // Require a canonical, digit-only unix timestamp.
+  //
+  // The signature is taken over the *raw* header string, so a permissive
+  // `Number()` parse would let several distinct strings ("1e3", " 1000 ",
+  // "1000.0") denote the same instant. That weakens header canonicalization
+  // and makes replay reasoning unreliable, so accept exactly one form.
+  if (!/^\d{1,15}$/.test(timestampHeader)) {
+    return { ok: false, reason: 'stale' };
+  }
+
   const ts = Number(timestampHeader);
-  if (!Number.isFinite(ts) || Math.abs(now - ts) > skewSec) {
+  if (!Number.isSafeInteger(ts) || Math.abs(now - ts) > skewSec) {
     return { ok: false, reason: 'stale' };
   }
 

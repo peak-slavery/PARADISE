@@ -22,3 +22,11 @@ Thumbs.db
 
 .vercel
 .workbuddy-ai/
+
+# Local agent tooling (not part of the project)
+.kilo/
+
+# Local security-testing payloads (request bodies used to probe request-size
+# limits). Not part of the project — never commit these.
+big_body.json
+ok_body.json

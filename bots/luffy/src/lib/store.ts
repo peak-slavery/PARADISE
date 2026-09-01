@@ -66,13 +66,41 @@ export async function loadGame(ctx: CommandContext): Promise<CardGameDoc> {
   return doc;
 }
 
-export async function saveGame(ctx: CommandContext, state: GameState): Promise<void> {
+/**
+ * Persists the player's row.
+ *
+ * Passing `expected` turns the write into a compare-and-swap: it only applies
+ * while the stored row still matches the state the caller loaded. Without it,
+ * two concurrent `/play` invocations read the same deck, both deal from it, and
+ * the second `$set` silently discards the first round — losing its score, its
+ * deck advance and any loot it granted.
+ *
+ * Returns false when the CAS lost, meaning the caller should abort rather than
+ * report a result that was never persisted.
+ */
+export async function saveGame(
+  ctx: CommandContext,
+  state: GameState,
+  expected?: { games_played: number; deck: string[] },
+): Promise<boolean> {
   const db = await ctx.services.requireMongo();
-  await db.card_games.updateOne(
-    { guild_id: ctx.guildId, user_id: ctx.userId },
+
+  const filter = expected
+    ? {
+        guild_id: ctx.guildId,
+        user_id: ctx.userId,
+        games_played: expected.games_played,
+        deck: expected.deck,
+      }
+    : { guild_id: ctx.guildId, user_id: ctx.userId };
+
+  const result = await db.card_games.updateOne(
+    filter,
     { $set: { ...state, updated_at: new Date() } },
-    { upsert: true },
+    { upsert: !expected },
   );
+
+  return result.matchedCount > 0 || Boolean(result.upsertedCount);
 }
 
 /** Loads the player's inventory, creating an empty one on first use. */
@@ -102,24 +130,41 @@ export async function getInventory(ctx: CommandContext): Promise<InventoryDoc> {
  */
 export async function grantItem(ctx: CommandContext, item: InventoryItem): Promise<boolean> {
   const db = await ctx.services.requireMongo();
+  const updatedAt = new Date();
 
+  // Pass 1 — top up a stack the player already holds.
   const topped = await db.inventories.updateOne(
     { guild_id: ctx.guildId, user_id: ctx.userId, 'items.item_id': item.item_id },
-    { $inc: { 'items.$.quantity': item.quantity }, $set: { updated_at: new Date() } },
+    { $inc: { 'items.$.quantity': item.quantity }, $set: { updated_at: updatedAt } },
   );
   if (topped.matchedCount > 0) return true;
 
+  // Pass 2 — append a new stack.
+  //
+  // The `$ne` guard is what makes this safe under concurrency. Without it, two
+  // simultaneous grants of an item the player does not yet hold would both
+  // observe "no match" in pass 1 and both `$push`, producing two separate
+  // entries for one `item_id` and breaking the stacking invariant.
   const pushed = await db.inventories.updateOne(
-    { guild_id: ctx.guildId, user_id: ctx.userId },
+    { guild_id: ctx.guildId, user_id: ctx.userId, 'items.item_id': { $ne: item.item_id } },
     {
       $push: { items: item },
-      $set: { updated_at: new Date() },
+      $set: { updated_at: updatedAt },
       $setOnInsert: { guild_id: ctx.guildId, user_id: ctx.userId },
     },
     { upsert: true },
   );
+  if (pushed.modifiedCount > 0 || pushed.upsertedCount > 0) return true;
 
-  return pushed.acknowledged;
+  // Lost the race: another grant created the stack between passes 1 and 2, so
+  // the `$ne` filter excluded our document. Retry the increment once so the
+  // quantity is never silently dropped.
+  const retried = await db.inventories.updateOne(
+    { guild_id: ctx.guildId, user_id: ctx.userId, 'items.item_id': item.item_id },
+    { $inc: { 'items.$.quantity': item.quantity }, $set: { updated_at: updatedAt } },
+  );
+
+  return retried.matchedCount > 0;
 }
 
 /** Mirrors a game event into the batched Mongo log stream. */

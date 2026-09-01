@@ -1,9 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { getServer } from '@/lib/data/servers';
+import { authorizeGuild, type GuildAuthorization } from '@/lib/authz';
 import { LOG_LEVELS, fetchLogs } from '@/lib/data/logs';
-import { credentials } from '@/lib/demo';
-import { createSupabaseServerClient, getCurrentUser } from '@/lib/supabase/server';
 import { isBotId } from '@/lib/bots';
 import type { LogLevel } from '@/lib/types';
 
@@ -11,53 +9,6 @@ import type { LogLevel } from '@/lib/types';
 // cached by the router cache.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function isDiscordSnowflake(value: string): boolean {
-  return /^\d{17,20}$/.test(value);
-}
-
-function hasConfiguredEnvironment(): boolean {
-  return [
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    process.env.MONGODB_URI,
-    process.env.HMAC_SECRET,
-  ].some((value) => typeof value === 'string' && value.trim().length > 0);
-}
-
-type GuildAuthorization =
-  | { ok: true; demo: boolean }
-  | { ok: false; status: 401 | 404 | 503; error: string };
-
-async function authorizeGuild(guildId: string): Promise<GuildAuthorization> {
-  if (!isDiscordSnowflake(guildId)) {
-    return { ok: false, status: 404, error: 'Guild not found' };
-  }
-
-  const status = credentials();
-  if (!status.supabase || !status.mongo) {
-    return hasConfiguredEnvironment()
-      ? { ok: false, status: 503, error: 'Dashboard backend is not configured' }
-      : { ok: true, demo: true };
-  }
-
-  try {
-    if (!(await createSupabaseServerClient())) {
-      return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
-    }
-
-    const user = await getCurrentUser();
-    if (!user) return { ok: false, status: 401, error: 'Authentication required' };
-
-    const server = await getServer(guildId);
-    if (!server) return { ok: false, status: 404, error: 'Guild not found' };
-  } catch {
-    return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
-  }
-
-  return { ok: true, demo: false };
-}
 
 function authorizationResponse(result: Exclude<GuildAuthorization, { ok: true }>) {
   return NextResponse.json({ error: result.error }, { status: result.status });

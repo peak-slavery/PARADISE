@@ -50,7 +50,15 @@ export async function updateSession(request: NextRequest): Promise<SessionRefres
   // Touching the user is what actually triggers a token refresh when the
   // access token has expired. `getUser()` revalidates with the Auth server;
   // `getSession()` alone would happily return a stale session.
-  const { data } = await supabase.auth.getUser();
-
-  return { response: supabaseResponse, user: data?.user ?? null, configured: true };
+  //
+  // If the Auth server is unreachable it throws. Treat that as "no session"
+  // rather than letting the exception escape: middleware must fail CLOSED, so
+  // the gate sends the caller to /login instead of returning a 500 that could
+  // bypass route protection.
+  try {
+    const { data } = await supabase.auth.getUser();
+    return { response: supabaseResponse, user: data?.user ?? null, configured: true };
+  } catch {
+    return { response: supabaseResponse, user: null, configured: true };
+  }
 }

@@ -41,13 +41,24 @@ export async function execute(ctx: Ctx): Promise<void> {
     const gamesWon = game.games_won + (round.outcome === 'win' ? 1 : 0);
     const score = game.score + round.points;
 
-    await saveGame(ctx, {
-      deck: deal.rest,
-      hand: deal.player,
-      score,
-      games_played: gamesPlayed,
-      games_won: gamesWon,
-    });
+    // Compare-and-swap on the state we just read: if another /play resolved
+    // first, the stored deck has moved on and this round must not be applied
+    // (or it would overwrite that round's score, deck and loot).
+    const saved = await saveGame(
+      ctx,
+      {
+        deck: deal.rest,
+        hand: deal.player,
+        score,
+        games_played: gamesPlayed,
+        games_won: gamesWon,
+      },
+      { games_played: game.games_played, deck: game.deck },
+    );
+
+    if (!saved) {
+      throw new UserError('Another hand resolved a moment ago. Try again.');
+    }
 
     let reward: InventoryItem | null = null;
     if (round.outcome === 'win') {

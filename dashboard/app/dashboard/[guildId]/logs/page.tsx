@@ -1,4 +1,5 @@
 import { LogStream } from '@/components/dashboard/LogStream';
+import { requireGuildAccess } from '@/lib/authz';
 import { fetchLogs } from '@/lib/data/logs';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,9 @@ export default async function LogsPage({
   params: Promise<{ guildId: string }>;
 }) {
   const { guildId } = await params;
+  // Authorize here, not only in the layout: Next renders layout and page
+  // concurrently, so a layout-level notFound() does not stop this Mongo read.
+  await requireGuildAccess(guildId);
   // Seed the stream server-side so the first paint already has content; the
   // client then takes over polling with a `since` cursor.
   const page = await fetchLogs(guildId, { limit: 60 });

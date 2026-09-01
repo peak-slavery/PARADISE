@@ -202,6 +202,16 @@ drop policy if exists users_self_update on public.users;
 create policy users_self_update on public.users
   for update using (id = auth.uid()) with check (id = auth.uid());
 
+-- The row-level policy above cannot see *which* columns changed, so on its own
+-- it lets a token holder flip `is_owner` on their own row and self-promote to
+-- guild owner (and re-point `discord_id`). Column privileges close that: the
+-- authenticated role may only maintain cosmetic profile fields.
+--
+-- This is a GRANT, not RLS, so it does not affect the `service_role` the bots
+-- use to provision rows — it only constrains browser-presented tokens.
+revoke update on public.users from anon, authenticated;
+grant update (username, avatar_url, updated_at) on public.users to authenticated;
+
 -- servers
 drop policy if exists servers_owner_select on public.servers;
 create policy servers_owner_select on public.servers

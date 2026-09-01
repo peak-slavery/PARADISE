@@ -4,6 +4,7 @@ import { signRequest, verifyRequest } from './hmac.js';
 import { TaskQueue, QueueTimeoutError } from './queue.js';
 import { enforceRateLimit } from './rate-limit.js';
 import { isSecureMongoUri } from './db/mongo.js';
+import { isGuildAuthorized } from './server-lock.js';
 
 describe('HMAC transport', () => {
   it('accepts a valid current signature and rejects tampering', () => {
@@ -49,11 +50,67 @@ describe('abuse controls', () => {
   });
 });
 
+describe('HMAC timestamp canonicalization', () => {
+  it('requires a canonical, digit-only timestamp header', () => {
+    const secret = 'a'.repeat(32);
+    const body = '{}';
+    const now = Math.floor(Date.now() / 1000);
+
+    // A canonical timestamp still verifies.
+    const valid = signRequest(secret, body, now);
+    expect(verifyRequest(secret, body, valid.timestamp, valid.signature).ok).toBe(true);
+
+    // Each of these denotes a valid instant under a permissive Number(), which
+    // would let one signed instant be presented under several header strings.
+    // Only the canonical form may verify.
+    for (const malformed of ['1e3', ' 1000 ', '1000.0', '1000junk', '', '+1000']) {
+      const signed = signRequest(secret, body, 1000);
+      expect(verifyRequest(secret, body, malformed, signed.signature).ok).toBe(false);
+    }
+  });
+});
+
 describe('database transport validation', () => {
   it('requires encrypted Mongo transport', () => {
     expect(isSecureMongoUri('mongodb+srv://user:pass@example.test/db')).toBe(true);
     expect(isSecureMongoUri('mongodb://user:pass@example.test/db')).toBe(false);
     expect(isSecureMongoUri('mongodb://user:pass@example.test/db?tls=false')).toBe(false);
     expect(isSecureMongoUri('mongodb://user:pass@example.test/db?tls=true')).toBe(true);
+  });
+});
+
+describe('guild authorization', () => {
+  it('fails closed when the authorization source is unavailable', async () => {
+    // A missing client or a query error must never be treated as "authorized":
+    // an outage would otherwise let any guild drive the bot's moderation and
+    // antinuke features.
+    await expect(isGuildAuthorized(null, '849213847293847021')).resolves.toBe(false);
+
+    const failing = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: { code: '500', message: 'boom' } }),
+          }),
+        }),
+      }),
+    } as never;
+
+    await expect(isGuildAuthorized(failing, '849213847293847021')).resolves.toBe(false);
+  });
+
+  it('authorizes only an explicit positive row', async () => {
+    const build = (row: unknown, error: unknown = null) =>
+      ({
+        from: () => ({
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: row, error }) }),
+          }),
+        }),
+      }) as never;
+
+    await expect(isGuildAuthorized(build({ authorized: true }), '849213847293847021')).resolves.toBe(true);
+    await expect(isGuildAuthorized(build({ authorized: false }), '849213847293847021')).resolves.toBe(false);
+    await expect(isGuildAuthorized(build(null), '849213847293847021')).resolves.toBe(false);
   });
 });
