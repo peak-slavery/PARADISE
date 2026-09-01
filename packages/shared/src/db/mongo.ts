@@ -87,6 +87,13 @@ export interface MongoHandle {
 export const LOG_TTL_SECONDS = 60 * 60 * 24 * 60; // 60 days
 
 /**
+ * AI conversation turns contain whatever a member typed — potentially personal
+ * data or secrets pasted into a prompt. They are only useful for short-range
+ * context, so they expire well before the log TTL.
+ */
+export const AI_CONTEXT_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+/**
  * Production Mongo credentials must opt into encrypted transport. Atlas SRV
  * URIs use TLS by default; a standard mongodb:// URI must explicitly request
  * tls=true or ssl=true. Explicit false values are rejected even for SRV URIs.
@@ -131,6 +138,10 @@ export async function ensureIndexes(collections: MongoCollections): Promise<void
     collections.card_games.createIndex({ guild_id: 1, user_id: 1 }, { unique: true }),
     collections.inventories.createIndex({ guild_id: 1, user_id: 1 }, { unique: true }),
     collections.ai_context.createIndex({ guild_id: 1, user_id: 1, scope: 1 }, { unique: true }),
+    collections.ai_context.createIndex(
+      { updated_at: 1 },
+      { name: 'ai_ctx_ttl', expireAfterSeconds: AI_CONTEXT_TTL_SECONDS },
+    ),
   ]);
 }
 

@@ -50,6 +50,9 @@ db.inventories.createIndex({ guild_id: 1, user_id: 1 }, { name: 'inv_guild_user'
 // --- ai_context ------------------------------------------------------------
 db.ai_context.createIndex({ guild_id: 1, user_id: 1, scope: 1 }, { name: 'ai_ctx_unique', unique: true });
 db.ai_context.createIndex({ updated_at: 1 }, { name: 'ai_ctx_updated' });
+// Prompts/responses can contain personal data, so retention is bounded (30d).
+// Distinct name so adding it never conflicts with the existing index above.
+db.ai_context.createIndex({ updated_at: 1 }, { name: 'ai_ctx_ttl', expireAfterSeconds: 60 * 60 * 24 * 30 });
 
 // --- Document validators (cheap safety net, validationLevel: moderate) ------
 db.runCommand({

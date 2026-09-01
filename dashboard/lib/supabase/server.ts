@@ -13,6 +13,26 @@ function anonKey(): string {
 }
 
 /**
+ * Session cookies carry the Supabase access/refresh JWTs, so they must never be
+ * reachable from JavaScript — otherwise a single XSS anywhere in the app is
+ * enough to steal a dashboard session outright.
+ *
+ * `@supabase/ssr` defaults to `httpOnly: false`, so these attributes are set
+ * explicitly rather than inherited from library defaults that can change
+ * between releases.
+ */
+const SESSION_COOKIE_OPTIONS = {
+  path: '/',
+  httpOnly: true,
+  // Lax still lets the cookie ride along on the top-level OAuth redirect back
+  // from Discord, while blocking cross-site subrequests (the CSRF case that
+  // actually matters here).
+  sameSite: 'lax',
+  // `Secure` would break plain-http local development, so it tracks NODE_ENV.
+  secure: process.env.NODE_ENV === 'production',
+} satisfies CookieOptions;
+
+/**
  * Cookie-backed Supabase client for server components and route handlers.
  *
  * The session travels in cookies, so Postgres RLS applies with
@@ -26,6 +46,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient | nul
   const store = await cookies();
 
   return createServerClient(publicUrl(), anonKey(), {
+    cookieOptions: SESSION_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return store.getAll();
@@ -33,7 +54,10 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient | nul
       setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
         try {
           for (const { name, value, options } of cookiesToSet) {
-            store.set(name, value, options);
+            // Hardened attributes are spread LAST so they always win: the
+            // library's `maxAge`/`expires` survive, but `httpOnly`, `secure`,
+            // `sameSite` and `path` can never be weakened back to defaults.
+            store.set(name, value, { ...options, ...SESSION_COOKIE_OPTIONS });
           }
         } catch {
           // Called from a server component, where cookies are read-only.
