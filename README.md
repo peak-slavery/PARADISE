@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./brand/readme-hero.svg" alt="Paradise Engine — eight bots, one secure control plane" width="100%" />
+  <img src="./brand/readme-hero.svg" alt="Ei Point Engine — eight bots, one secure control plane" width="100%" />
 </div>
 
 <div align="center">
@@ -30,7 +30,7 @@ Eight focused bots. One authenticated control plane. Three purpose-built data la
 
 ## The idea
 
-Paradise Engine is a modular Discord platform for guilds that need more than a single all-purpose bot. Each capability runs as an isolated service, while `@eiflow/shared` provides the runtime contract for authorization, rate limits, queues, observability, data access, and failure handling.
+Ei Point Engine is a modular Discord platform for guilds that need more than a single all-purpose bot. Each capability runs as an isolated service, while `@eiflow/shared` provides the runtime contract for authorization, rate limits, queues, observability, data access, and failure handling.
 
 The result is a system that can scale by responsibility instead of by complexity:
 
