@@ -89,6 +89,13 @@ export interface BotRuntime {
   shutdown: (signal: string) => Promise<void>;
 }
 
+export function buildClientOptions(options: Pick<CreateBotOptions, 'intents' | 'partials'>): ClientOptions {
+  return {
+    intents: options.intents,
+    ...(options.partials === undefined ? {} : { partials: options.partials }),
+  };
+}
+
 async function replyEmbed(
   interaction: ChatInputCommandInteraction,
   embed: EmbedBuilder,
@@ -397,7 +404,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     isOwner: (userId) => env.ownerIds.includes(userId),
   };
 
-  const client = new Client({ intents: options.intents, partials: options.partials });
+  const client = new Client(buildClientOptions(options));
   const stopInterlink = interlink.startPolling((event) => handleDashboardEmbed(client, event, log));
   // Bot-specific handlers first; the shared universal commands are the fallback
   // so a bot can override /help or /about by defining its own.

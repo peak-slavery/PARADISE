@@ -7,6 +7,18 @@ import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
 import { isGuildWhitelisted, isPermanentGuild } from './whitelist.js';
+import { buildClientOptions } from './bot.js';
+
+describe('Discord client options', () => {
+  it('omits partials when they are not configured', () => {
+    expect(buildClientOptions({ intents: [] })).toEqual({ intents: [] });
+  });
+
+  it('preserves configured partials', () => {
+    const partials = [0, 1];
+    expect(buildClientOptions({ intents: [], partials })).toEqual({ intents: [], partials });
+  });
+});
 
 describe('HMAC transport', () => {
   it('accepts a valid current signature and rejects tampering', () => {

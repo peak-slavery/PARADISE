@@ -1,0 +1,492 @@
+services:
+  - type: web
+    name: eiflow-niko-robin
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-niko-robin
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: niko-robin
+      - key: BOT_NAME
+        value: Niko Robin
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#8E44AD'
+      - key: DISCORD_CLIENT_ID
+        value: '1479781452987109377'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-boahancock
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-boahancock
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: boahancock
+      - key: BOT_NAME
+        value: Boa Hancock
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#FF5FA2'
+      - key: DISCORD_CLIENT_ID
+        value: '1479781736278917164'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-nami
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-nami
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: nami
+      - key: BOT_NAME
+        value: Nami
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#FF8C42'
+      - key: DISCORD_CLIENT_ID
+        value: '1544543648065261628'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-cyrene
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-cyrene
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: cyrene
+      - key: BOT_NAME
+        value: Cyrene
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#B76EFF'
+      - key: DISCORD_CLIENT_ID
+        value: '1544546018807513131'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: CYRENE_MODEL
+        value: openai/gpt-oss-20b
+      - key: ASSISTANT_MODEL
+        value: mistral-small-latest
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-zoro
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-zoro
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: zoro
+      - key: BOT_NAME
+        value: Zoro
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#2ECC71'
+      - key: DISCORD_CLIENT_ID
+        value: '1544547167858069504'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: GROQ_AUTOMOD_API_KEY
+        sync: false
+      - key: AUTOMOD_SLM_MODEL
+        value: llama-3.1-8b-instant
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-shanks
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-shanks
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: shanks
+      - key: BOT_NAME
+        value: Shanks
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#C0392B'
+      - key: DISCORD_CLIENT_ID
+        value: '1544550226373640263'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-luffy
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-luffy
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: luffy
+      - key: BOT_NAME
+        value: Luffy
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#F1C40F'
+      - key: DISCORD_CLIENT_ID
+        value: '1544550806118858792'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+
+  - type: web
+    name: eiflow-sanji
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run start -w @eiflow/bot-sanji
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: BOT_ID
+        value: sanji
+      - key: BOT_NAME
+        value: Sanji
+      - key: BOT_VERSION
+        value: 1.0.0
+      - key: EMBED_COLOR
+        value: '#3498DB'
+      - key: DISCORD_CLIENT_ID
+        value: '1544551817634119784'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://paradise-engine.vercel.app
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_URI
+        sync: false
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: '3000'
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
