@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 
 import { BotTabs } from '@/components/dashboard/BotTabs';
 import { ConfigForm } from '@/components/dashboard/ConfigForm';
+import { ControlCenter } from '@/components/dashboard/ControlCenter';
 import { requireGuildAccess } from '@/lib/authz';
 import { DEFAULT_BOT_ID, getBot, isBotId } from '@/lib/bots';
 import { getBotConfig } from '@/lib/data/config';
@@ -30,6 +31,8 @@ export default async function GuildConfigPage({
           <BotTabs guildId={guildId} active={bot.id} />
         </Suspense>
       </div>
+
+      <ControlCenter guildId={guildId} />
 
       <ConfigForm
         guildId={guildId}

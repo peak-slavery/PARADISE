@@ -5,6 +5,8 @@ import { TaskQueue, QueueTimeoutError } from './queue.js';
 import { enforceRateLimit } from './rate-limit.js';
 import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized } from './server-lock.js';
+import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
+import { isGuildWhitelisted, isPermanentGuild } from './whitelist.js';
 
 describe('HMAC transport', () => {
   it('accepts a valid current signature and rejects tampering', () => {
@@ -21,6 +23,27 @@ describe('HMAC transport', () => {
       ok: false,
       reason: 'stale',
     });
+  });
+});
+
+describe('guild whitelist', () => {
+  it('fails closed without Supabase and recognizes configured fixed guilds', async () => {
+    await expect(isGuildWhitelisted(null, '123456789012345678')).resolves.toBe(false);
+    expect(isPermanentGuild({ devGuildId: '123456789012345678', mainGuildId: undefined }, '123456789012345678')).toBe(true);
+  });
+
+  it('accepts active full and future temporary rows, but rejects expired rows', async () => {
+    const row = { whitelist_type: 'full', expires_at: null };
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({ maybeSingle: async () => ({ data: row, error: null }) }),
+          }),
+        }),
+      }),
+    } as never;
+    await expect(isGuildWhitelisted(supabase, '123456789012345678')).resolves.toBe(true);
   });
 });
 
@@ -112,5 +135,46 @@ describe('guild authorization', () => {
     await expect(isGuildAuthorized(build({ authorized: true }), '849213847293847021')).resolves.toBe(true);
     await expect(isGuildAuthorized(build({ authorized: false }), '849213847293847021')).resolves.toBe(false);
     await expect(isGuildAuthorized(build(null), '849213847293847021')).resolves.toBe(false);
+  });
+});
+
+describe('bot interlink', () => {
+  it('rejects envelopes larger than the shared transport cap', async () => {
+    const kv = {
+      publish: async () => 1,
+      set: async () => undefined,
+    } as never;
+    const interlink = new BotInterlink(kv, 'shanks');
+
+    await expect(
+      interlink.publish('dashboard.send_embed', { content: 'x'.repeat(INTERLINK_MAX_BYTES) }, { targetBot: 'shanks' }),
+    ).rejects.toThrow('32 KiB');
+  });
+
+  it('polls only events targeted to the source bot once', async () => {
+    let current: InterlinkEvent | null = {
+      id: 'event-1',
+      type: 'dashboard.send_embed',
+      sourceBot: 'dashboard',
+      targetBot: 'shanks',
+      guildId: '849213847293847021',
+      createdAt: new Date().toISOString(),
+      payload: { channelId: '123456789012345678' },
+    };
+    const kv = {
+      get: async () => current,
+    } as never;
+    const interlink = new BotInterlink(kv, 'shanks');
+    const received: string[] = [];
+    const stop = interlink.startPolling((event) => {
+      received.push(event.id);
+    }, 5);
+
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    current = { ...current, id: 'event-2', targetBot: 'zoro' };
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    stop();
+
+    expect(received).toEqual(['event-1']);
   });
 });

@@ -93,6 +93,7 @@ export const DEMO_USER: UserRow = {
   username: 'eipoint.keeper',
   avatar_url: null,
   is_owner: true,
+  is_master: true,
   created_at: '2024-03-02T09:14:00.000Z',
   updated_at: '2026-08-24T17:02:00.000Z',
 };

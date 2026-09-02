@@ -188,3 +188,44 @@ export async function connectMongo(env: Env, log: Logger): Promise<MongoHandle |
   log.error({ err: lastErr }, 'mongodb unavailable — running in degraded mode');
   return null;
 }
+
+/**
+ * Optional secondary connection used only for audit/backup logs. It is kept
+ * separate from the primary data connection so backup outages cannot block
+ * command execution or primary reads.
+ */
+export async function connectSecondaryMongo(env: Env, log: Logger): Promise<MongoHandle | null> {
+  if (!env.hasSecondaryMongo || !env.mongodbSecondaryUri) {
+    log.info('secondary MongoDB audit sink is not configured');
+    return null;
+  }
+  if (!isSecureMongoUri(env.mongodbSecondaryUri)) {
+    log.error('secondary MongoDB URI is not encrypted — audit backup disabled');
+    return null;
+  }
+
+  const client = new MongoClient(env.mongodbSecondaryUri, {
+    tls: true,
+    maxPoolSize: 5,
+    minPoolSize: 0,
+    serverSelectionTimeoutMS: 8_000,
+  });
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await client.connect();
+      const db = client.db(env.mongodbSecondaryDb);
+      const collections = buildCollections(db);
+      await collections.logs.createIndex({ guild_id: 1, created_at: -1 });
+      await collections.logs.createIndex({ created_at: 1 }, { expireAfterSeconds: LOG_TTL_SECONDS });
+      log.info({ db: env.mongodbSecondaryDb }, 'secondary mongodb audit sink connected');
+      return { client, db, collections };
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+    }
+  }
+  await client.close().catch(() => undefined);
+  log.warn({ err: lastErr }, 'secondary mongodb unavailable — continuing without audit backup');
+  return null;
+}

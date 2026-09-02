@@ -48,12 +48,17 @@ const EnvSchema = z.object({
     emptyToUndefined,
     z.string().min(32, 'HMAC_SECRET must be at least 32 characters').optional(),
   ).default(''),
+  DEV_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
+  MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
+  DEV_AUTH_CHANNEL_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
 
   SUPABASE_URL: optString,
   SUPABASE_SERVICE_ROLE_KEY: optString,
 
   MONGODB_URI: optString,
   MONGODB_DB: z.string().default('eiflow'),
+  MONGODB_SECONDARY_URI: optString,
+  MONGODB_SECONDARY_DB: z.string().default('eipointsecurity'),
 
   UPSTASH_REDIS_REST_URL: optString,
   UPSTASH_REDIS_REST_TOKEN: optString,
@@ -101,12 +106,17 @@ export interface Env {
 
   ownerIds: string[];
   hmacSecret: string;
+  devGuildId: string | undefined;
+  mainGuildId: string | undefined;
+  devAuthChannelId: string | undefined;
 
   supabaseUrl: string | undefined;
   supabaseServiceRoleKey: string | undefined;
 
   mongodbUri: string | undefined;
   mongodbDb: string;
+  mongodbSecondaryUri: string | undefined;
+  mongodbSecondaryDb: string;
 
   upstashUrl: string | undefined;
   upstashToken: string | undefined;
@@ -134,6 +144,8 @@ export interface Env {
   hasSupabase: boolean;
   /** True when the Mongo URI is present. */
   hasMongo: boolean;
+  /** True when the optional secondary audit Mongo URI is present. */
+  hasSecondaryMongo: boolean;
   /** True when both Upstash values are present. */
   hasRedis: boolean;
   /** True when the Mistral API key is present. */
@@ -159,6 +171,7 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
   const supabaseUrl = d.SUPABASE_URL;
   const supabaseServiceRoleKey = d.SUPABASE_SERVICE_ROLE_KEY;
   const mongodbUri = d.MONGODB_URI;
+  const mongodbSecondaryUri = d.MONGODB_SECONDARY_URI;
   const upstashUrl = d.UPSTASH_REDIS_REST_URL;
   const upstashToken = d.UPSTASH_REDIS_REST_TOKEN;
 
@@ -171,10 +184,15 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     discordClientId: d.DISCORD_CLIENT_ID,
     ownerIds: d.OWNER_IDS,
     hmacSecret: d.HMAC_SECRET,
+    devGuildId: d.DEV_GUILD_ID,
+    mainGuildId: d.MAIN_GUILD_ID,
+    devAuthChannelId: d.DEV_AUTH_CHANNEL_ID,
     supabaseUrl,
     supabaseServiceRoleKey,
     mongodbUri,
     mongodbDb: d.MONGODB_DB,
+    mongodbSecondaryUri,
+    mongodbSecondaryDb: d.MONGODB_SECONDARY_DB,
     upstashUrl,
     upstashToken,
     sentryDsn: d.SENTRY_DSN,
@@ -194,6 +212,7 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     automodSlmThreshold: d.AUTOMOD_SLM_THRESHOLD,
     hasSupabase: Boolean(supabaseUrl && supabaseServiceRoleKey),
     hasMongo: Boolean(mongodbUri),
+    hasSecondaryMongo: Boolean(mongodbSecondaryUri),
     hasRedis: Boolean(upstashUrl && upstashToken),
     hasMistral: Boolean(d.MISTRAL_API_KEY),
     hasAutomodSlm: Boolean(d.GROQ_AUTOMOD_API_KEY),

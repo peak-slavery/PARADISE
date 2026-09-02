@@ -98,6 +98,34 @@
   }
 }
 
+/* The dark surface keeps the same neumorphic geometry while changing only the
+   material tokens. The class is applied by the persisted guild setting. */
+.dark {
+  --pe-bg: #20232b;
+  --pe-bg-tint-a: #242936;
+  --pe-bg-tint-b: #1c1f27;
+  --pe-surface: #252a34;
+  --pe-surface-raised: #2b303b;
+  --pe-surface-sunken: #1b1f27;
+  --pe-line: #3a4250;
+  --neu-light: rgba(68, 77, 94, 0.52);
+  --neu-dark: rgba(10, 12, 17, 0.62);
+  --neu-dark-strong: rgba(7, 9, 13, 0.76);
+  --glass-bg: rgba(37, 42, 52, 0.72);
+  --glass-bg-strong: rgba(43, 48, 59, 0.86);
+  --glass-border: rgba(120, 132, 154, 0.18);
+  --glass-edge: rgba(255, 255, 255, 0.05);
+  --pe-ink: #f3f5f8;
+  --pe-ink-soft: #c2c9d4;
+  --pe-ink-muted: #9aa5b5;
+  --pe-ink-faint: #778294;
+  --pe-accent: #8490ff;
+  --pe-accent-soft: #a6afff;
+  --pe-accent-ink: #b5bdff;
+  --pe-ring: rgba(132, 144, 255, 0.55);
+  color-scheme: dark;
+}
+
 /* ===========================================================================
    Shadow primitives
    Declared once, consumed by Tailwind's `shadow-*` scale (see

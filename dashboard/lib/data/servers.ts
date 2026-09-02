@@ -83,6 +83,7 @@ export async function getProfile(): Promise<{ user: UserRow; demo: boolean } | n
         null,
       avatar_url: typeof meta.avatar_url === 'string' ? meta.avatar_url : null,
       is_owner: false,
+      is_master: false,
       created_at: authUser.created_at ?? new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     };

@@ -76,6 +76,55 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
   return { ok: true, demo: false };
 }
 
+const MASTER_DISCORD_ID = '1479589523426902208';
+
+export type MasterAuthorization =
+  | { ok: true; userId: string; source: 'database' | 'environment' }
+  | { ok: false; status: 401 | 403 | 503; error: string };
+
+/**
+ * Resolve master access without trusting browser input. The DB flag/Discord
+ * identity is authoritative when Supabase is available; the environment
+ * fallback is only a server-side emergency bootstrap for the fixed operator.
+ */
+export async function authorizeMaster(): Promise<MasterAuthorization> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, status: 401, error: 'Authentication required' };
+
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) {
+    return process.env.MASTER_DISCORD_ID === MASTER_DISCORD_ID && user.user_metadata?.provider_id === MASTER_DISCORD_ID
+      ? { ok: true, userId: user.id, source: 'environment' }
+      : { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('discord_id,is_master')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (error) return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
+
+  if (data?.is_master === true || data?.discord_id === MASTER_DISCORD_ID) {
+    return { ok: true, userId: user.id, source: 'database' };
+  }
+
+  const providerId = user.user_metadata?.provider_id ?? user.user_metadata?.sub;
+  if (process.env.MASTER_DISCORD_ID === MASTER_DISCORD_ID && providerId === MASTER_DISCORD_ID) {
+    return { ok: true, userId: user.id, source: 'environment' };
+  }
+
+  return { ok: false, status: 403, error: 'Master access required' };
+}
+
+export async function authorizeGuildOrMaster(guildId: string): Promise<GuildAuthorization & { master?: boolean }> {
+  if (!isDiscordSnowflake(guildId)) return { ok: false, status: 404, error: 'Guild not found' };
+  const master = await authorizeMaster();
+  if (master.ok) return { ok: true, demo: false, master: true };
+  const authorization = await authorizeGuild(guildId);
+  return authorization.ok ? { ...authorization, master: false } : authorization;
+}
+
 /**
  * Page-level variant. Unauthenticated callers go to `/login`; every other
  * failure is a 404 so the response never discloses whether the guild exists.

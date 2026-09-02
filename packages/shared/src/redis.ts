@@ -22,6 +22,8 @@ export interface Kv {
   get<T>(key: string): Promise<T | null>;
   set<T>(key: string, value: T, ttlSec: number): Promise<void>;
   del(key: string): Promise<void>;
+  /** Publish a bounded message to a Redis pub/sub channel. */
+  publish(channel: string, message: string): Promise<number>;
   /** Fixed-window allowance: returns { allowed, remaining, resetSec }. */
   allow(key: string, limit: number, windowSec: number): Promise<{ allowed: boolean; remaining: number; resetSec: number }>;
   ping(): Promise<boolean>;
@@ -72,6 +74,7 @@ abstract class BaseKv implements Kv {
   abstract get<T>(key: string): Promise<T | null>;
   abstract set<T>(key: string, value: T, ttlSec: number): Promise<void>;
   abstract del(key: string): Promise<void>;
+  abstract publish(channel: string, message: string): Promise<number>;
   abstract ping(): Promise<boolean>;
 
   async allow(key: string, limit: number, windowSec: number): Promise<{ allowed: boolean; remaining: number; resetSec: number }> {
@@ -128,6 +131,11 @@ class UpstashKv extends BaseKv {
   async del(key: string): Promise<void> {
     this.track(1);
     await this.r.del(key);
+  }
+
+  async publish(channel: string, message: string): Promise<number> {
+    this.track(1);
+    return Number(await this.r.publish(channel, message));
   }
 
   async ping(): Promise<boolean> {
@@ -212,6 +220,14 @@ class MemoryKv extends BaseKv {
     this.expireAt.delete(key);
   }
 
+  async publish(channel: string, message: string): Promise<number> {
+    this.track(1);
+    // Memory mode has no subscribers; retain the latest envelope briefly so
+    // local diagnostics can still inspect that publication occurred.
+    await this.set(`pubsub:last:${channel}`, message, 60);
+    return 0;
+  }
+
   async ping(): Promise<boolean> {
     return false;
   }
@@ -245,4 +261,7 @@ export const keys = {
   searchCache: (query: string) => `search:${query.toLowerCase().slice(0, 200)}`,
   aiCache: (scope: string, hash: string) => `ai:${scope}:${hash}`,
   searchCooldown: (userId: string) => `search:cd:${userId}`,
+  interlink: (channel: string) => `bot:interlink:${channel}`,
+  heartbeat: (botId: string) => `bot:heartbeat:${botId}`,
+  status: (botId: string) => `bot:status:${botId}`,
 } as const;

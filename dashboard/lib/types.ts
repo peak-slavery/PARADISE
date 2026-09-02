@@ -26,6 +26,53 @@ export interface UserRow {
   username: string | null;
   avatar_url: string | null;
   is_owner: boolean;
+  is_master: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DashboardTheme = 'light' | 'dark' | 'system';
+
+export type BotId =
+  | 'cyrene'
+  | 'luffy'
+  | 'zoro'
+  | 'nami'
+  | 'sanji'
+  | 'shanks'
+  | 'niko-robin'
+  | 'boahancock';
+
+export interface BotStateRow {
+  id: string;
+  guild_id: string;
+  bot_id: BotId;
+  enabled: boolean;
+  paused: boolean;
+  feature_flags: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface ServerSettingsRow {
+  guild_id: string;
+  theme: DashboardTheme;
+  notifications_enabled: boolean;
+  server_paused: boolean;
+  notification_preferences: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface InfraAccountRow {
+  id: string;
+  provider: 'mongodb' | 'redis' | 'supabase';
+  account_name: string;
+  region: string | null;
+  secret_ref: string;
+  endpoint: string | null;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

@@ -32,5 +32,8 @@ export * from './health.js';
 export * from './hmac.js';
 export * from './types.js';
 export * from './authorization.js';
+export * from './interlink.js';
+export * from './whitelist.js';
+export * from './vault-client.js';
 export * from './bot.js';
 export * from './deploy.js';

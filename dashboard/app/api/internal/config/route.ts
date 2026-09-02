@@ -9,6 +9,7 @@ import {
   verifyRequest,
 } from '@/lib/hmac';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
+import { consumeNonce } from '@/lib/internal-auth';
 import type { ConfigValues } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -198,14 +199,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Guild is not authorized' }, { status: 403 });
   }
 
-  const { error: nonceError } = await supabase
-    .from('internal_request_nonces')
-    .insert({ request_id: requestId });
-  if (nonceError) {
-    if (nonceError.code === '23505') {
+  try {
+    if (!await consumeNonce(requestId)) {
       return NextResponse.json({ error: 'Request already processed' }, { status: 409 });
     }
-    console.error('[internal/config] nonce insert failed', { code: nonceError.code });
+  } catch (error) {
+    console.error('[internal/config] nonce insert failed', { error });
     return NextResponse.json({ error: 'Configuration write failed' }, { status: 500 });
   }
 

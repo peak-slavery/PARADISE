@@ -37,6 +37,10 @@ create table if not exists public.users (
   updated_at  timestamptz not null default now()
 );
 
+-- `is_master` is provisioned by a trusted migration/service-role path. The
+-- browser role cannot change it; see the protected trigger below.
+alter table public.users add column if not exists is_master boolean not null default false;
+
 comment on table public.users is 'Dashboard identities. discord_id mirrors the Discord OAuth subject.';
 
 -- One-time IDs for privileged bot-to-dashboard requests. The primary key makes
@@ -58,6 +62,7 @@ begin
   if new.id <> old.id
      or new.discord_id <> old.discord_id
      or new.is_owner <> old.is_owner
+     or new.is_master <> old.is_master
      or new.created_at <> old.created_at then
     raise exception 'protected user fields cannot be changed';
   end if;
@@ -176,6 +181,105 @@ alter table public.antinuke_whitelist enable row level security;
 alter table public.internal_request_nonces enable row level security;
 revoke all on public.internal_request_nonces from anon, authenticated;
 
+-- ---------------------------------------------------------------------------
+-- Control-plane administration and multi-account metadata
+-- ---------------------------------------------------------------------------
+alter table public.users add column if not exists is_master boolean not null default false;
+
+create table if not exists public.infra_accounts (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null check (provider in ('mongodb', 'redis', 'supabase')),
+  account_name text not null check (length(account_name) between 1 and 80),
+  region text,
+  secret_ref text not null check (length(secret_ref) between 1 and 160),
+  endpoint text,
+  enabled boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (provider, account_name)
+);
+
+create table if not exists public.bot_states (
+  id uuid primary key default gen_random_uuid(),
+  guild_id text not null references public.servers(guild_id) on delete cascade,
+  bot_id text not null check (bot_id in ('cyrene', 'luffy', 'zoro', 'nami', 'sanji', 'shanks', 'niko-robin', 'boahancock')),
+  enabled boolean not null default true,
+  paused boolean not null default false,
+  feature_flags jsonb not null default '{}'::jsonb,
+  updated_by uuid references public.users(id),
+  updated_at timestamptz not null default now(),
+  unique (guild_id, bot_id)
+);
+
+create table if not exists public.server_settings (
+  guild_id text primary key references public.servers(guild_id) on delete cascade,
+  theme text not null default 'system' check (theme in ('light', 'dark', 'system')),
+  notifications_enabled boolean not null default true,
+  server_paused boolean not null default false,
+  notification_preferences jsonb not null default '{}'::jsonb,
+  updated_by uuid references public.users(id),
+  updated_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- secret_records — encrypted provider credentials and bootstrap metadata
+-- ---------------------------------------------------------------------------
+-- Plaintext credentials never belong in this table. The dashboard seals them
+-- with AES-256-GCM before writing, and only the server-side vault module can
+-- decrypt them with SECRET_VAULT_MASTER_KEY.
+create table if not exists public.secret_records (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  provider     text not null check (provider in ('mongodb', 'supabase', 'redis', 'firebase', 'cloudflare', 'core', 'other')),
+  label        text not null check (length(label) between 1 and 160),
+  ciphertext   text not null,
+  iv           text not null,
+  auth_tag     text not null,
+  metadata     jsonb not null default '{}'::jsonb,
+  created_at   timestamptz not null default now(),
+  rotated_at   timestamptz not null default now(),
+  created_by   uuid references public.users(id),
+  revoked_at   timestamptz
+);
+
+create unique index if not exists secret_records_active_name_uidx
+  on public.secret_records (name) where revoked_at is null;
+create index if not exists secret_records_provider_idx
+  on public.secret_records (provider) where revoked_at is null;
+
+-- ---------------------------------------------------------------------------
+-- guild_whitelists — command access separate from server discovery
+-- ---------------------------------------------------------------------------
+create table if not exists public.guild_whitelists (
+  id             uuid primary key default gen_random_uuid(),
+  guild_id       text not null check (guild_id ~ '^\\d{17,20}$'),
+  whitelist_type text not null check (whitelist_type in ('full', 'temp', 'unauthorised')),
+  expires_at     timestamptz,
+  note           text,
+  added_by       uuid references public.users(id),
+  created_at     timestamptz not null default now(),
+  removed_at     timestamptz,
+  removed_by     uuid references public.users(id),
+  check (whitelist_type <> 'temp' or expires_at is not null),
+  check (whitelist_type <> 'full' or expires_at is null)
+);
+
+create unique index if not exists guild_whitelists_active_uidx
+  on public.guild_whitelists (guild_id) where removed_at is null;
+create index if not exists guild_whitelists_active_type_idx
+  on public.guild_whitelists (whitelist_type) where removed_at is null;
+
+create index if not exists bot_states_guild_idx on public.bot_states (guild_id);
+create index if not exists bot_states_enabled_idx on public.bot_states (enabled, paused);
+create index if not exists infra_accounts_provider_idx on public.infra_accounts (provider, enabled);
+
+alter table public.infra_accounts enable row level security;
+alter table public.bot_states enable row level security;
+alter table public.server_settings enable row level security;
+alter table public.secret_records enable row level security;
+alter table public.guild_whitelists enable row level security;
+
 -- Helper: does the current dashboard user own this guild?
 create or replace function public.owns_guild(p_guild_id text)
 returns boolean
@@ -192,6 +296,39 @@ as $$
       and u.id = auth.uid()
   );
 $$;
+
+-- Master access is intentionally a separate security-definer predicate. It
+-- avoids recursive RLS policies and allows a DB flag plus the immutable
+-- operator identity to be enforced in one place.
+create or replace function public.is_master_user()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.users u
+    where u.id = auth.uid()
+      and (u.is_master = true or u.discord_id = '1479589523426902208')
+  );
+$$;
+
+create or replace function public.can_access_guild(p_guild_id text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_master_user() or public.owns_guild(p_guild_id);
+$$;
+
+revoke execute on function public.is_master_user() from public;
+grant execute on function public.is_master_user() to authenticated, service_role;
+revoke execute on function public.can_access_guild(text) from public;
+grant execute on function public.can_access_guild(text) to authenticated, service_role;
 
 -- users: read/update own row only
 drop policy if exists users_self_select on public.users;
@@ -215,11 +352,37 @@ grant update (username, avatar_url, updated_at) on public.users to authenticated
 -- servers
 drop policy if exists servers_owner_select on public.servers;
 create policy servers_owner_select on public.servers
-  for select using (public.owns_guild(guild_id));
+  for select using (public.can_access_guild(guild_id));
 
 drop policy if exists servers_owner_update on public.servers;
 create policy servers_owner_update on public.servers
-  for update using (public.owns_guild(guild_id)) with check (public.owns_guild(guild_id));
+  for update using (public.can_access_guild(guild_id)) with check (public.can_access_guild(guild_id));
+
+-- Master-only infrastructure metadata. Secret values are never stored here;
+-- secret_ref points to the deployment secret manager key.
+drop policy if exists infra_accounts_master_all on public.infra_accounts;
+create policy infra_accounts_master_all on public.infra_accounts
+  for all using (public.is_master_user()) with check (public.is_master_user());
+
+drop policy if exists secret_records_master_all on public.secret_records;
+create policy secret_records_master_all on public.secret_records
+  for all using (public.is_master_user()) with check (public.is_master_user());
+
+drop policy if exists guild_whitelists_select on public.guild_whitelists;
+create policy guild_whitelists_select on public.guild_whitelists
+  for select using (public.can_access_guild(guild_id));
+
+drop policy if exists guild_whitelists_master_write on public.guild_whitelists;
+create policy guild_whitelists_master_write on public.guild_whitelists
+  for all using (public.is_master_user()) with check (public.is_master_user());
+
+drop policy if exists bot_states_access on public.bot_states;
+create policy bot_states_access on public.bot_states
+  for all using (public.can_access_guild(guild_id)) with check (public.can_access_guild(guild_id));
+
+drop policy if exists server_settings_access on public.server_settings;
+create policy server_settings_access on public.server_settings
+  for all using (public.can_access_guild(guild_id)) with check (public.can_access_guild(guild_id));
 
 -- bot_configs
 drop policy if exists bot_configs_owner_rw on public.servers;

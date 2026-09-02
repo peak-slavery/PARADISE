@@ -68,6 +68,54 @@ export type InternalRequestNonceRow = {
   created_at: string;
 };
 
+export type BotStateRow = {
+  id: string;
+  guild_id: string;
+  bot_id: string;
+  enabled: boolean;
+  paused: boolean;
+  feature_flags: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type ServerSettingsRow = {
+  guild_id: string;
+  theme: 'light' | 'dark' | 'system';
+  notifications_enabled: boolean;
+  server_paused: boolean;
+  notification_preferences: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type GuildWhitelistRow = {
+  id: string;
+  guild_id: string;
+  whitelist_type: 'full' | 'temp' | 'unauthorised';
+  expires_at: string | null;
+  note: string | null;
+  added_by: string | null;
+  created_at: string;
+  removed_at: string | null;
+  removed_by: string | null;
+};
+
+export type SecretRecordRow = {
+  id: string;
+  name: string;
+  provider: 'mongodb' | 'supabase' | 'redis' | 'firebase' | 'cloudflare' | 'core' | 'other';
+  label: string;
+  ciphertext: string;
+  iv: string;
+  auth_tag: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  rotated_at: string;
+  created_by: string | null;
+  revoked_at: string | null;
+};
+
 export type ServersInsert = {
   guild_id: string;
   name?: string | null;
@@ -122,6 +170,30 @@ export type Database = {
         Row: BotConfigRow;
         Insert: BotConfigsInsert;
         Update: Partial<BotConfigsInsert>;
+        Relationships: [];
+      };
+      bot_states: {
+        Row: BotStateRow;
+        Insert: Partial<BotStateRow> & Pick<BotStateRow, 'guild_id' | 'bot_id'>;
+        Update: Partial<BotStateRow>;
+        Relationships: [];
+      };
+      server_settings: {
+        Row: ServerSettingsRow;
+        Insert: Partial<ServerSettingsRow> & Pick<ServerSettingsRow, 'guild_id'>;
+        Update: Partial<ServerSettingsRow>;
+        Relationships: [];
+      };
+      guild_whitelists: {
+        Row: GuildWhitelistRow;
+        Insert: Omit<GuildWhitelistRow, 'id' | 'created_at'> & { id?: string; created_at?: string };
+        Update: Partial<GuildWhitelistRow>;
+        Relationships: [];
+      };
+      secret_records: {
+        Row: SecretRecordRow;
+        Insert: Omit<SecretRecordRow, 'id' | 'created_at' | 'rotated_at'> & { id?: string; created_at?: string; rotated_at?: string };
+        Update: Partial<SecretRecordRow>;
         Relationships: [];
       };
       mod_actions: {

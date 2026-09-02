@@ -14,6 +14,14 @@ import type { MongoCollections } from './db/mongo.js';
 import type { EmbedFactory } from './embed.js';
 import type { TaskQueue } from './queue.js';
 import type { LogSink } from './log-sink.js';
+import type { BotInterlink } from './interlink.js';
+
+export interface BotControlState {
+  enabled: boolean;
+  paused: boolean;
+  serverPaused: boolean;
+  featureFlags: Record<string, unknown>;
+}
 
 export interface BotServices {
   env: Env;
@@ -32,6 +40,8 @@ export interface BotServices {
   /** Throws ServiceUnavailableError when Supabase is down. */
   requireSupabase(): TypedSupabase;
   isAuthorized(guildId: string): Promise<boolean>;
+  getControlState(guildId: string): Promise<BotControlState>;
+  interlink: BotInterlink;
   /** True for IDs listed in OWNER_IDS (bypass rate limits + antinuke). */
   isOwner(userId: string): boolean;
 }
