@@ -17,6 +17,8 @@
     "vite": "^7.3.1"
   },
   "scripts": {
+    "build": "npm run build -w @eipoint/dashboard",
+    "start": "npm run start -w @eipoint/dashboard",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
     "test": "npm run test --workspaces --if-present",
