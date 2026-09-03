@@ -24,7 +24,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -33,22 +35,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: SERPAPI_KEY
@@ -87,7 +77,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -96,22 +88,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
@@ -146,7 +126,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -155,22 +137,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
@@ -205,7 +175,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -214,22 +186,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -276,7 +236,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -285,26 +247,16 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: GROQ_AUTOMOD_API_KEY
         sync: false
       - key: AUTOMOD_SLM_MODEL
         value: llama-3.1-8b-instant
+      - key: AUTOMOD_SLM_THRESHOLD
+        value: '0.75'
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
@@ -339,7 +291,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -348,22 +302,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
@@ -398,7 +340,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -407,22 +351,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
@@ -457,7 +389,9 @@ services:
       - key: HMAC_SECRET
         sync: false
       - key: OWNER_IDS
-        sync: false
+        value: '1479589523426902208'
+      - key: HEALTH_TOKEN
+        generateValue: true
       - key: DASHBOARD_URL
         value: https://paradise-engine.vercel.app
       - key: DEV_GUILD_ID
@@ -466,22 +400,10 @@ services:
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: MONGODB_URI
-        sync: false
       - key: MONGODB_DB
         value: eiflow
-      - key: MONGODB_SECONDARY_URI
-        sync: false
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
