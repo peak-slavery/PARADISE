@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { authorizationResponse, invalidJsonResponse } from '@/lib/api-response';
+import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeMaster } from '@/lib/authz';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
@@ -19,8 +19,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const access = await authorizeMaster();
   if (!access.ok) return authorizationResponse(access);
-  let body: { provider?: unknown; account_name?: unknown; region?: unknown; secret_ref?: unknown; endpoint?: unknown; enabled?: unknown; metadata?: unknown };
-  try { body = await request.json(); } catch { return invalidJsonResponse(); }
+  const parsed = await boundedJson<{ provider?: unknown; account_name?: unknown; region?: unknown; secret_ref?: unknown; endpoint?: unknown; enabled?: unknown; metadata?: unknown }>(request, 16 * 1024);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
   if (typeof body.provider !== 'string' || !providers.has(body.provider)) return NextResponse.json({ error: 'Invalid provider' }, { status: 400 });
   if (typeof body.account_name !== 'string' || body.account_name.length < 1 || body.account_name.length > 80) return NextResponse.json({ error: 'Invalid account_name' }, { status: 400 });
   if (typeof body.secret_ref !== 'string' || body.secret_ref.length < 1 || body.secret_ref.length > 160) return NextResponse.json({ error: 'Invalid secret_ref' }, { status: 400 });

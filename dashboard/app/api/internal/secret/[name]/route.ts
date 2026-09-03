@@ -14,9 +14,6 @@ const NAME_PATTERN = /^[a-z][a-z0-9_.:-]{1,127}$/;
 
 const BOT_SECRET_ALLOWLIST: Record<string, readonly string[]> = Object.fromEntries(
   BOTS.map((bot) => [bot.id, [
-    'core.guild.dev',
-    'core.guild.main',
-    'core.guild.dev.auth_channel',
     `discord.${bot.id}.token`,
     'mongodb.primary.uri',
     'mongodb.primary.database',
@@ -26,13 +23,6 @@ const BOT_SECRET_ALLOWLIST: Record<string, readonly string[]> = Object.fromEntri
     'redis.primary.token',
     'supabase.runtime.url',
     'supabase.runtime.service_key',
-    'firebase.admin.service_account',
-    'cloudflare.account_id',
-    'cloudflare.api_token',
-    'cloudflare.r2.access_key_id',
-    'cloudflare.r2.secret_access_key',
-    'cloudflare.r2.endpoint',
-    'cloudflare.d1.database_id',
   ]]),
 );
 
@@ -42,12 +32,25 @@ function botSecret(botId: string): string {
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       const value = parsed[botId];
-      if (typeof value === 'string' && value.length >= 32) return value;
+      const entries = Object.entries(parsed);
+      if (
+        entries.length === BOTS.length &&
+        BOTS.every(({ id }) => typeof parsed[id] === 'string') &&
+        entries.every(([, candidate]) => typeof candidate === 'string' && isStrongSecret(candidate)) &&
+        new Set(Object.values(parsed)).size === entries.length &&
+        typeof value === 'string'
+      ) {
+        return value;
+      }
     } catch {
       // Fall through to the local-development secret.
     }
   }
   return process.env.NODE_ENV === 'production' ? '' : process.env.HMAC_SECRET?.trim() ?? '';
+}
+
+function isStrongSecret(value: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(value) || /^[A-Za-z0-9+/=_-]{43,}$/.test(value);
 }
 
 async function boundedBody(request: NextRequest): Promise<string | null> {
@@ -84,7 +87,13 @@ export async function POST(
   const botId = request.headers.get('x-pe-bot-id') ?? '';
   if (!isBotId(botId) || !NAME_PATTERN.test(name)) return NextResponse.json({ error: 'Invalid internal request' }, { status: 400 });
   const secret = botSecret(botId);
-  if (!secret || !credentials().hmac) return NextResponse.json({ error: 'Internal authentication is unavailable' }, { status: 503 });
+  if (
+    !secret ||
+    !credentials().hmac ||
+    (process.env.NODE_ENV === 'production' && !process.env.HMAC_SECRETS_JSON?.trim())
+  ) {
+    return NextResponse.json({ error: 'Internal authentication is unavailable' }, { status: 503 });
+  }
 
   const body = await boundedBody(request);
   if (body === null) return NextResponse.json({ error: 'Request body too large' }, { status: 413 });

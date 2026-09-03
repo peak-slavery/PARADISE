@@ -19,23 +19,27 @@ export async function loadVaultSecret(name: string): Promise<string | null> {
   }
   const body = JSON.stringify({ request_id: randomUUID().replace(/-/g, ''), bot_id: botId });
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/internal/secret/${encodeURIComponent(name)}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-pe-bot-id': botId,
-      'x-pe-timestamp': timestamp,
-      'x-pe-signature': sign(hmacSecret, timestamp, body),
-    },
-    body,
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Vault request failed with ${response.status}`);
-  const payload = await response.json() as { value?: unknown };
-  if (typeof payload.value !== 'string') throw new Error('Vault returned an invalid secret');
-  cache.set(name, { value: payload.value, expiresAt: Date.now() + CACHE_TTL_MS });
-  return payload.value;
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/internal/secret/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-pe-bot-id': botId,
+        'x-pe-timestamp': timestamp,
+        'x-pe-signature': sign(hmacSecret, timestamp, body),
+      },
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const payload = await response.json() as { value?: unknown };
+    if (typeof payload.value !== 'string') return null;
+    cache.set(name, { value: payload.value, expiresAt: Date.now() + CACHE_TTL_MS });
+    return payload.value;
+  } catch {
+    return null;
+  }
 }
 
 /**

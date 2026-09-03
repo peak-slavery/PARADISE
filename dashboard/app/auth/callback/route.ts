@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { resolveSiteOrigin } from '@/lib/site-origin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 const STABLE_ERRORS = {
@@ -18,7 +19,7 @@ const STABLE_ERRORS = {
  */
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const origin = resolveOrigin(requestUrl);
+  const origin = resolveSiteOrigin(requestUrl);
   if (!origin) {
     // Never reflect an untrusted Host header in production redirects.
     console.error('[auth/callback] no valid canonical site origin configured');
@@ -49,27 +50,6 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.redirect(new URL(target, origin));
-}
-
-function resolveOrigin(requestUrl: URL): string | null {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configured) {
-    try {
-      const parsed = new URL(configured);
-      const protocolAllowed =
-        parsed.protocol === 'https:' ||
-        (process.env.NODE_ENV !== 'production' && parsed.protocol === 'http:');
-      if (protocolAllowed && !parsed.username && !parsed.password) {
-        return parsed.origin;
-      }
-    } catch {
-      // Invalid deployment configuration is handled below without exposing it.
-    }
-  }
-
-  const isExplicitLocalOrDemo =
-    process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
-  return isExplicitLocalOrDemo ? requestUrl.origin : null;
 }
 
 function safeInternalTarget(value: string | null): string {

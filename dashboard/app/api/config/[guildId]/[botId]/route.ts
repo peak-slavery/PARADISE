@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { authorizeGuild, type GuildAuthorization } from '@/lib/authz';
+import { boundedJson } from '@/lib/api-response';
 import { getBot, isBotId } from '@/lib/bots';
 import { getBotConfig, saveBotConfig } from '@/lib/data/config';
 import type { ConfigValues } from '@/lib/types';
@@ -56,12 +57,8 @@ export async function PUT(
   const authorization = await authorizeGuild(guildId);
   if (!authorization.ok) return authorizationResponse(authorization);
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 });
-  }
+  const body = await boundedJson<unknown>(request, 32 * 1024);
+  if (body instanceof NextResponse) return body;
 
   const candidate = (body as { config?: unknown } | null)?.config;
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {

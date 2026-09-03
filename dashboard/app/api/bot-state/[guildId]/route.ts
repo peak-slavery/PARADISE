@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { authorizationResponse, invalidJsonResponse } from '@/lib/api-response';
+import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeGuildOrMaster, isDiscordSnowflake } from '@/lib/authz';
 import { createSupabaseServerClient, getCurrentUser } from '@/lib/supabase/server';
 import type { BotId } from '@/lib/types';
@@ -23,8 +23,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!isDiscordSnowflake(guildId)) return NextResponse.json({ error: 'Invalid guild id' }, { status: 400 });
   const access = await authorizeGuildOrMaster(guildId);
   if (!access.ok) return authorizationResponse(access);
-  let body: { bot_id?: unknown; enabled?: unknown; paused?: unknown; feature_flags?: unknown };
-  try { body = await request.json(); } catch { return invalidJsonResponse(); }
+  const parsed = await boundedJson<{ bot_id?: unknown; enabled?: unknown; paused?: unknown; feature_flags?: unknown }>(request, 16 * 1024);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
   if (typeof body.bot_id !== 'string' || !botIds.has(body.bot_id as BotId)) return NextResponse.json({ error: 'Invalid bot_id' }, { status: 400 });
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return NextResponse.json({ error: 'Invalid enabled' }, { status: 400 });
   if (body.paused !== undefined && typeof body.paused !== 'boolean') return NextResponse.json({ error: 'Invalid paused' }, { status: 400 });

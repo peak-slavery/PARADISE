@@ -36,13 +36,13 @@ function isSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get('origin');
   if (!origin) return false;
   try {
-    return new URL(origin).host === request.nextUrl.host;
+    return new URL(origin).origin === request.nextUrl.origin;
   } catch {
     return false;
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { response, user, configured } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
 

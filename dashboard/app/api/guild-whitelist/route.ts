@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { authorizationResponse, invalidJsonResponse } from '@/lib/api-response';
+import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeMaster } from '@/lib/authz';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
@@ -24,8 +24,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const access = await authorizeMaster();
   if (!access.ok) return authorizationResponse(access);
-  let body: { guild_id?: unknown; whitelist_type?: unknown; expires_at?: unknown; note?: unknown };
-  try { body = await request.json(); } catch { return invalidJsonResponse(); }
+  const parsed = await boundedJson<{ guild_id?: unknown; whitelist_type?: unknown; expires_at?: unknown; note?: unknown }>(request, 8 * 1024);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
   if (typeof body.guild_id !== 'string' || !/^\d{17,20}$/.test(body.guild_id)) return NextResponse.json({ error: 'Invalid guild_id' }, { status: 400 });
   if (fixedGuild(body.guild_id)) return NextResponse.json({ error: 'Configured dev/main guilds are immutable' }, { status: 409 });
   if (!['full', 'temp', 'unauthorised'].includes(String(body.whitelist_type))) return NextResponse.json({ error: 'Invalid whitelist_type' }, { status: 400 });

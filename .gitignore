@@ -26,6 +26,7 @@ Thumbs.db
 
 # Local agent tooling (not part of the project)
 .kilo/
+.playwright-mcp/
 
 # Local security-testing payloads (request bodies used to probe request-size
 # limits). Not part of the project — never commit these.
