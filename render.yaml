@@ -28,7 +28,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -81,7 +81,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -130,7 +130,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -179,7 +179,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -240,7 +240,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -295,7 +295,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -344,7 +344,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
@@ -393,7 +393,7 @@ services:
       - key: HEALTH_TOKEN
         generateValue: true
       - key: DASHBOARD_URL
-        value: https://paradise-engine.vercel.app
+        sync: false
       - key: DEV_GUILD_ID
         sync: false
       - key: MAIN_GUILD_ID
