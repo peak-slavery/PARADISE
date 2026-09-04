@@ -7,7 +7,7 @@ import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
 import { isGuildWhitelisted, isPermanentGuild } from './whitelist.js';
-import { buildClientOptions } from './bot.js';
+import { buildClientOptions, parseGuildAuthorizationButton } from './bot.js';
 
 describe('Discord client options', () => {
   it('omits partials when they are not configured', () => {
@@ -17,6 +17,21 @@ describe('Discord client options', () => {
   it('preserves configured partials', () => {
     const partials = [0, 1];
     expect(buildClientOptions({ intents: [], partials })).toEqual({ intents: [], partials });
+  });
+});
+
+describe('guild authorization controls', () => {
+  it('accepts only canonical review button identifiers', () => {
+    expect(parseGuildAuthorizationButton('guild-auth:temp:123456789012345678')).toEqual({
+      decision: 'temp',
+      guildId: '123456789012345678',
+    });
+  });
+
+  it('rejects forged or malformed review button identifiers', () => {
+    expect(parseGuildAuthorizationButton('guild-auth:full:123')).toBeNull();
+    expect(parseGuildAuthorizationButton('guild-auth:full:123456789012345678:extra')).toBeNull();
+    expect(parseGuildAuthorizationButton('guild-auth:approve:123456789012345678')).toBeNull();
   });
 });
 
