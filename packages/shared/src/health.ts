@@ -127,7 +127,17 @@ export function startHealthServer(deps: HealthDeps): Promise<Server> {
       .then((payload) => {
         const anyDown = Object.values(payload.db_connections).some((v) => v === false);
         const status = anyDown ? 'degraded' : 'ok';
-        send(anyDown ? 503 : 200, JSON.stringify(detailed ? { ...payload, status } : { status }));
+        // Liveness vs readiness. An unauthenticated probe (Render, uptime
+        // monitors) asks "is this process alive?", which must NOT depend on a
+        // dependency being reachable: a transient database blip would
+        // otherwise make the platform restart every bot, cancelling the
+        // in-process reconnect timer that would have recovered it. The body
+        // still reports `degraded`, and authenticated callers keep the true
+        // readiness signal (503) so monitoring is not blinded.
+        send(
+          detailed && anyDown ? 503 : 200,
+          JSON.stringify(detailed ? { ...payload, status } : { status }),
+        );
       })
       .catch((err: unknown) => {
         deps.log.error({ err }, 'health check failed');
