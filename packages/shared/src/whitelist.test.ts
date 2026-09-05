@@ -28,8 +28,9 @@ describe('whitelist mutations', () => {
 });
 
 describe('config authorization migration', () => {
-  it('rejects expired temporary and unauthorised whitelist rows', () => {
-    expect(schema).toContain("whitelist_type = 'unauthorised'");
-    expect(schema).toContain("whitelist_type = 'temp' and (expires_at is null or expires_at <= now())");
+  it('requires a positive active whitelist unless legacy access is explicitly allowed', () => {
+    expect(schema).toContain('not p_allow_legacy');
+    expect(schema).toContain("whitelist_type = 'full'");
+    expect(schema).toContain("whitelist_type = 'temp' and expires_at > now()");
   });
 });

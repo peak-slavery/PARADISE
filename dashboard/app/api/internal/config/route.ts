@@ -187,6 +187,7 @@ export async function POST(request: NextRequest) {
     p_guild_id: guildId,
     p_bot_id: botId,
     p_config: clean,
+    p_allow_legacy: guildId === process.env.DEV_GUILD_ID?.trim() || guildId === process.env.MAIN_GUILD_ID?.trim(),
   });
   if (error) {
     if (error.message === 'guild is not authorized') {

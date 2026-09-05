@@ -229,6 +229,7 @@ export type Database = {
           p_guild_id: string;
           p_bot_id: string;
           p_config: Record<string, unknown>;
+          p_allow_legacy?: boolean;
         };
         Returns: boolean;
       };
