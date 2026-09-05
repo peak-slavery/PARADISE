@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeMaster } from '@/lib/authz';
+import { invalidateWhitelistCache } from '@/lib/interlink';
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
@@ -58,5 +59,10 @@ export async function POST(request: NextRequest) {
   if (error || !data) return NextResponse.json({ error: 'Unable to save guild whitelist' }, { status: 503 });
   const { error: serverError } = await supabase.from('servers').update({ authorized: type !== 'unauthorised' }).eq('guild_id', body.guild_id);
   if (serverError) return NextResponse.json({ error: 'Unable to update server authorization' }, { status: 503 });
+  try {
+    await invalidateWhitelistCache(body.guild_id);
+  } catch {
+    return NextResponse.json({ error: 'Unable to refresh guild authorization' }, { status: 503 });
+  }
   return NextResponse.json({ whitelist: data }, { status: 201 });
 }

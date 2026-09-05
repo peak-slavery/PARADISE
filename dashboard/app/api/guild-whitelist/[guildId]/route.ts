@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { authorizationResponse } from '@/lib/api-response';
 import { authorizeMaster, isDiscordSnowflake } from '@/lib/authz';
+import { invalidateWhitelistCache } from '@/lib/interlink';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
@@ -21,5 +22,10 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (error) return NextResponse.json({ error: 'Unable to revoke guild whitelist' }, { status: 503 });
   const { error: serverError } = await supabase.from('servers').update({ authorized: false }).eq('guild_id', guildId);
   if (serverError) return NextResponse.json({ error: 'Unable to revoke server authorization' }, { status: 503 });
+  try {
+    await invalidateWhitelistCache(guildId);
+  } catch {
+    return NextResponse.json({ error: 'Unable to refresh guild authorization' }, { status: 503 });
+  }
   return NextResponse.json({ ok: true });
 }

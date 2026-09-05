@@ -3,9 +3,32 @@ import { randomUUID } from 'node:crypto';
 const MAX_EVENT_BYTES = 32 * 1024;
 
 function redisConfig(): { url: string; token: string } | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const rawUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  return url && token ? { url: url.replace(/\/$/, ''), token } : null;
+  if (!rawUrl || !token) return null;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'https:') return null;
+    return { url: url.origin, token };
+  } catch {
+    return null;
+  }
+}
+
+export async function invalidateWhitelistCache(guildId: string): Promise<void> {
+  if (!/^\d{17,20}$/.test(guildId)) return;
+  const config = redisConfig();
+  if (!config) return;
+  const response = await fetch(`${config.url}/pipeline`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${config.token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify([["DEL", `wl:active:${guildId}`]]),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('Redis whitelist cache invalidation failed');
 }
 
 export async function publishDashboardEmbed(input: {
