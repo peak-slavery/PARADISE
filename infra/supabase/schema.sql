@@ -304,6 +304,69 @@ create unique index if not exists guild_whitelists_active_uidx
 create index if not exists guild_whitelists_active_type_idx
   on public.guild_whitelists (whitelist_type) where removed_at is null;
 
+create or replace function public.set_guild_whitelist(
+  p_guild_id text,
+  p_whitelist_type text,
+  p_expires_at timestamptz default null,
+  p_note text default null,
+  p_added_by uuid default null
+)
+returns public.guild_whitelists
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  result public.guild_whitelists;
+begin
+  if p_guild_id !~ '^\d{17,20}$' then raise exception 'invalid guild id'; end if;
+  if p_whitelist_type not in ('full', 'temp', 'unauthorised') then raise exception 'invalid whitelist type'; end if;
+  if p_whitelist_type = 'temp' and (p_expires_at is null or p_expires_at <= now()) then raise exception 'temporary whitelist must expire in the future'; end if;
+  if p_whitelist_type = 'full' and p_expires_at is not null then raise exception 'full whitelist cannot expire'; end if;
+
+  update public.guild_whitelists
+    set removed_at = now(), removed_by = p_added_by
+    where guild_id = p_guild_id and removed_at is null;
+
+  insert into public.guild_whitelists(guild_id, whitelist_type, expires_at, note, added_by)
+    values (p_guild_id, p_whitelist_type, case when p_whitelist_type = 'temp' then p_expires_at else null end, p_note, p_added_by)
+    returning * into result;
+
+  update public.servers
+    set authorized = p_whitelist_type <> 'unauthorised', updated_at = now()
+    where guild_id = p_guild_id;
+  return result;
+end;
+$$;
+
+create or replace function public.revoke_guild_whitelist(
+  p_guild_id text,
+  p_removed_by uuid default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  changed_count integer;
+begin
+  update public.guild_whitelists
+    set removed_at = now(), removed_by = p_removed_by
+    where guild_id = p_guild_id and removed_at is null;
+  get diagnostics changed_count = row_count;
+  update public.servers
+    set authorized = false, updated_at = now()
+    where guild_id = p_guild_id;
+  return changed_count > 0;
+end;
+$$;
+
+revoke all on function public.set_guild_whitelist(text, text, timestamptz, text, uuid) from public;
+revoke all on function public.revoke_guild_whitelist(text, uuid) from public;
+grant execute on function public.set_guild_whitelist(text, text, timestamptz, text, uuid) to service_role;
+grant execute on function public.revoke_guild_whitelist(text, uuid) to service_role;
+
 create index if not exists bot_states_guild_idx on public.bot_states (guild_id);
 create index if not exists bot_states_enabled_idx on public.bot_states (enabled, paused);
 create index if not exists infra_accounts_provider_idx on public.infra_accounts (provider, enabled);

@@ -414,8 +414,12 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     intervalMs: 30_000,
     maxBatch: 200,
     onError: (err, dropped) => {
-      // Backup failure must never interrupt primary bot operation.
-      log.warn({ err, dropped }, 'secondary audit log batch failed');
+      // Backup failure must never interrupt primary bot operation. Mark the
+      // handle unavailable so the reconnect loop can establish a fresh sink.
+      const failedHandle = secondaryMongoHandle;
+      secondaryMongoHandle = null;
+      void failedHandle?.client.close().catch(() => undefined);
+      log.warn({ err, dropped }, 'secondary audit log batch failed; reconnecting');
     },
   });
 
@@ -546,7 +550,6 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         const type = decision === 'deny' ? 'unauthorised' : decision;
         const expiresAt = decision === 'temp' ? new Date(Date.now() + 24 * 60 * 60_000).toISOString() : null;
         await writeGuildWhitelist(supabase, { guildId, type: type as 'full' | 'temp' | 'unauthorised', expiresAt });
-        await supabase.from('servers').update({ authorized: decision !== 'deny' }).eq('guild_id', guildId);
         await invalidateGuildWhitelistCache(kv, guildId);
         await interaction.update({ components: [], content: `Authorization decision: ${decision === 'deny' ? 'denied' : decision === 'temp' ? 'temporary 24h' : 'full access'}` });
       } catch (error) {
@@ -619,13 +622,22 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
 
   /* --- Mongo auto-reconnect --------------------------------------------- */
   const reconnect = setInterval(() => {
-    if (mongoHandle) return;
-    void connectMongo(env, log).then((handle) => {
-      if (handle) {
-        mongoHandle = handle;
-        log.info('mongodb reconnected');
-      }
-    });
+    if (!mongoHandle) {
+      void connectMongo(env, log).then((handle) => {
+        if (handle) {
+          mongoHandle = handle;
+          log.info('mongodb reconnected');
+        }
+      });
+    }
+    if (!secondaryMongoHandle) {
+      void connectSecondaryMongo(env, log).then((handle) => {
+        if (handle) {
+          secondaryMongoHandle = handle;
+          log.info('secondary mongodb reconnected');
+        }
+      });
+    }
   }, 60_000);
   reconnect.unref?.();
 

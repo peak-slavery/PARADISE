@@ -25,7 +25,7 @@ export * from './embed.js';
 export * from './sanitize.js';
 export * from './server-lock.js';
 export * from './commands.js';
-export * from './rate-limit.js';
+export * from './control.js';
 export * from './queue.js';
 export * from './responses.js';
 export * from './health.js';

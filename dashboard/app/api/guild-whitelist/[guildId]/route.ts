@@ -18,10 +18,11 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
   const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: 'Dashboard backend is unavailable' }, { status: 503 });
-  const { error } = await supabase.from('guild_whitelists').update({ removed_at: new Date().toISOString(), removed_by: access.userId }).eq('guild_id', guildId).is('removed_at', null);
+  const { error } = await supabase.rpc('revoke_guild_whitelist', {
+    p_guild_id: guildId,
+    p_removed_by: access.userId,
+  });
   if (error) return NextResponse.json({ error: 'Unable to revoke guild whitelist' }, { status: 503 });
-  const { error: serverError } = await supabase.from('servers').update({ authorized: false }).eq('guild_id', guildId);
-  if (serverError) return NextResponse.json({ error: 'Unable to revoke server authorization' }, { status: 503 });
   try {
     await invalidateWhitelistCache(guildId);
   } catch {

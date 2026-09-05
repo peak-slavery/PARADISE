@@ -26,6 +26,7 @@ jobs:
         run: node scripts/quota-report.mjs
         env:
           BOT_HEALTH_URLS: ${{ secrets.BOT_HEALTH_URLS }}
+          BOT_HEALTH_TOKENS: ${{ secrets.BOT_HEALTH_TOKENS }}
           REDIS_DAILY_COMMAND_BUDGET: ${{ vars.REDIS_DAILY_COMMAND_BUDGET || '8000' }}
           DISCORD_REPORT_WEBHOOK: ${{ secrets.DISCORD_REPORT_WEBHOOK }}
 

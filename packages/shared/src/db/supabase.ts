@@ -232,6 +232,23 @@ export type Database = {
         };
         Returns: boolean;
       };
+      set_guild_whitelist: {
+        Args: {
+          p_guild_id: string;
+          p_whitelist_type: string;
+          p_expires_at?: string | null;
+          p_note?: string | null;
+          p_added_by?: string | null;
+        };
+        Returns: GuildWhitelistRow;
+      };
+      revoke_guild_whitelist: {
+        Args: {
+          p_guild_id: string;
+          p_removed_by?: string | null;
+        };
+        Returns: boolean;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

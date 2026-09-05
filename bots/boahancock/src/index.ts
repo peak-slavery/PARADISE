@@ -7,7 +7,7 @@ import {
   type MessageCreateOptions,
   type PartialGuildMember,
 } from 'discord.js';
-import { createBot, readBotConfig } from '@eiflow/shared';
+import { createBot, isBotOperational, readBotConfig } from '@eiflow/shared';
 import {
   DEFAULT_CONFIG,
   channelFor,
@@ -45,6 +45,7 @@ await createBot({
 
         const guild = member.guild;
         if (!(await services.isAuthorized(guild.id))) return;
+        if (!isBotOperational(await services.getControlState(guild.id))) return;
         const config = await readBotConfig<WelcomeConfig>(
           services.supabase,
           guild.id,

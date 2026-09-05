@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Events, GatewayIntentBits, type Client } from 'discord.js';
-import { createBot, keys, readBotConfig, type BotServices, type MongoCollections } from '@eiflow/shared';
+import { createBot, isBotOperational, keys, readBotConfig, type BotServices, type MongoCollections } from '@eiflow/shared';
 import { DEFAULT_CONFIG, type LevelUpConfig } from './lib/store.js';
 import { setXpTracker, XpTracker, type LevelUpEvent } from './lib/xp.js';
 
@@ -123,6 +123,7 @@ await createBot({
         const guildId = message.guildId;
         const userId = message.author.id;
         if (!(await services.isAuthorized(guildId))) return;
+        if (!isBotOperational(await services.getControlState(guildId))) return;
 
         // Spam cannot inflate XP: one credit per member per window.
         const verdict = await services.redis.allow(keys.xpDebounce(guildId, userId), 1, CHAT_COOLDOWN_SECONDS);
@@ -158,6 +159,7 @@ await createBot({
       try {
         const guildId = newState.guild.id;
         if (!(await services.isAuthorized(guildId))) return;
+        if (!isBotOperational(await services.getControlState(guildId))) return;
         const userId = newState.id;
         const bot = newState.member?.user.bot ?? false;
 

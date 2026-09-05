@@ -7,23 +7,47 @@
  * logging bot's dashboard channel).
  *
  * Env:
- *   BOT_HEALTH_URLS          comma-separated base URLs, e.g. https://bot-a.onrender.com
+ *   BOT_HEALTH_URLS          comma-separated HTTPS base URLs, e.g. https://bot-a.onrender.com
+ *   BOT_HEALTH_TOKENS        comma-separated HEALTH_TOKEN values in the same order
  *   REDIS_DAILY_COMMAND_BUDGET  Upstash free-tier allowance (default 8000)
  *   DISCORD_REPORT_WEBHOOK   optional; without it the report is printed to stdout
  */
-const urls = (process.env.BOT_HEALTH_URLS ?? '')
-  .split(',')
-  .map((u) => u.trim())
-  .filter(Boolean);
+function csv(name) {
+  return (process.env[name] ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+const urls = csv('BOT_HEALTH_URLS');
+const tokens = csv('BOT_HEALTH_TOKENS');
+
+if (
+  urls.length === 0 ||
+  tokens.length !== urls.length ||
+  urls.some((base) => {
+    try {
+      return new URL(base).protocol !== 'https:';
+    } catch {
+      return true;
+    }
+  })
+) {
+  console.error('BOT_HEALTH_URLS must contain one or more HTTPS URLs with matching BOT_HEALTH_TOKENS');
+  process.exit(1);
+}
 
 const budget = Number(process.env.REDIS_DAILY_COMMAND_BUDGET ?? 8000);
 const webhook = process.env.DISCORD_REPORT_WEBHOOK;
 const ALERT_RATIO = 0.8;
 
-async function fetchHealth(base) {
+async function fetchHealth(base, token) {
   const url = `${base.replace(/\/$/, '')}/health`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) return { url, ok: false, error: `HTTP ${res.status}` };
     return { url, ok: true, data: await res.json() };
   } catch (err) {
@@ -31,7 +55,7 @@ async function fetchHealth(base) {
   }
 }
 
-const results = await Promise.all(urls.map(fetchHealth));
+const results = await Promise.all(urls.map((url, index) => fetchHealth(url, tokens[index])));
 
 const lines = [];
 let alerts = 0;

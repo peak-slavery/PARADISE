@@ -8,7 +8,7 @@ import {
   type ClientEvents,
   type VoiceState,
 } from 'discord.js';
-import { createBot, sanitizeText } from '@eiflow/shared';
+import { createBot, isBotOperational, sanitizeText } from '@eiflow/shared';
 import { redactContent, redactName, recordEvent, type EventEnv, type LogAction } from './lib/store.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -50,7 +50,7 @@ await createBot({
           const first = args[0] as { id?: string; guildId?: string; guild?: { id?: string } } | undefined;
           const second = args[1] as { id?: string; guildId?: string; guild?: { id?: string } } | undefined;
           const guildId = first?.guildId ?? first?.guild?.id ?? second?.guildId ?? second?.guild?.id ?? second?.id;
-          if (guildId && !(await services.isAuthorized(guildId))) return;
+          if (guildId && (!(await services.isAuthorized(guildId)) || !isBotOperational(await services.getControlState(guildId)))) return;
           await handler(...args);
         })().catch((err: unknown) => {
           log.error({ err, event: String(event) }, 'logging event handler failed');

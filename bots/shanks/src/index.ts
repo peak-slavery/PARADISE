@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Events, GatewayIntentBits } from 'discord.js';
-import { createBot, readBotConfig, sendChannelEmbed } from '@eiflow/shared';
+import { createBot, isBotOperational, readBotConfig, sendChannelEmbed } from '@eiflow/shared';
 import { DEFAULT_CONFIG } from './lib/store.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -28,6 +28,7 @@ await createBot({
         // AutoModerationActionExecution exposes `guild`, not `guildId`.
         const guildId = execution.guild.id;
         if (!(await services.isAuthorized(guildId))) return;
+        if (!isBotOperational(await services.getControlState(guildId))) return;
 
         const config = await readBotConfig(
           services.supabase,

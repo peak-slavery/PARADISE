@@ -108,26 +108,13 @@ export async function writeGuildWhitelist(
     throw new Error('Temporary whitelist must expire in the future');
   }
 
-  const { error: revokeError } = await supabase
-    .from('guild_whitelists')
-    .update({ removed_at: new Date().toISOString(), removed_by: input.addedBy ?? null })
-    .eq('guild_id', input.guildId)
-    .is('removed_at', null);
-  if (revokeError) throw revokeError;
-
-  const { data, error } = await supabase
-    .from('guild_whitelists')
-    .insert({
-      guild_id: input.guildId,
-      whitelist_type: input.type,
-      expires_at: input.type === 'temp' ? input.expiresAt ?? null : null,
-      note: input.note ?? null,
-      added_by: input.addedBy ?? null,
-      removed_at: null,
-      removed_by: null,
-    })
-    .select('*')
-    .single();
+  const { data, error } = await supabase.rpc('set_guild_whitelist', {
+    p_guild_id: input.guildId,
+    p_whitelist_type: input.type,
+    p_expires_at: input.type === 'temp' ? input.expiresAt ?? null : null,
+    p_note: input.note ?? null,
+    p_added_by: input.addedBy ?? null,
+  });
   if (error || !data) throw error ?? new Error('Whitelist write returned no row');
   return data as GuildWhitelistRow;
 }
@@ -137,10 +124,9 @@ export async function removeGuildWhitelist(
   guildId: string,
   removedBy?: string | null,
 ): Promise<void> {
-  const { error } = await supabase
-    .from('guild_whitelists')
-    .update({ removed_at: new Date().toISOString(), removed_by: removedBy ?? null })
-    .eq('guild_id', guildId)
-    .is('removed_at', null);
+  const { error } = await supabase.rpc('revoke_guild_whitelist', {
+    p_guild_id: guildId,
+    p_removed_by: removedBy ?? null,
+  });
   if (error) throw error;
 }
