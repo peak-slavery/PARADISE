@@ -89,11 +89,18 @@ async function postAuthorizationRequest(
 }
 
 /**
- * Server-lock: record new guilds and keep them command-locked until approved.
- * Fixed dev/main guilds bypass the review flow; all other guilds receive a
- * private review request in the configured dev channel.
+ * Server-lock: record new guilds and immediately leave anything that is not
+ * explicitly authorized. Fixed dev/main guilds bypass the review flow; all
+ * other guilds receive a private review request before the bot leaves. The
+ * whitelist approval remains useful for a later invite and is never a reason
+ * to keep an unapproved guild connected.
  */
 export function attachServerLock(client: Client, deps: ServerLockDeps): void {
+  const leaveUnauthorized = async (guild: { id: string; name: string; leave(): Promise<unknown> }): Promise<void> => {
+    deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild is not authorized; leaving');
+    await guild.leave();
+  };
+
   const reconcile = async (): Promise<void> => {
     for (const guild of client.guilds.cache.values()) {
       try {
@@ -102,7 +109,7 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): void {
           continue;
         }
         if (!(await isGuildAuthorized(deps.supabase, guild.id, deps.env, deps.kv))) {
-          deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild remains command-locked pending authorization');
+          await leaveUnauthorized(guild);
         }
       } catch (err) {
         deps.log.error({ err, guildId: guild.id }, 'guild authorization reconciliation failed');
@@ -125,13 +132,16 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): void {
       if (!allowed) {
         deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild joined pending authorization');
         deps.record({
-          action: 'server_lock.pending',
+          action: 'server_lock.rejected',
           level: 'warn',
-          message: `Guild ${guild.name} is pending authorization`,
+          message: `Guild ${guild.name} was rejected because it is not authorized`,
           guildId: guild.id,
           meta: { guildName: guild.name, memberCount: guild.memberCount },
         });
-        await postAuthorizationRequest(client, deps.env, guild);
+        await postAuthorizationRequest(client, deps.env, guild).catch((err) => {
+          deps.log.warn({ err, guildId: guild.id }, 'unable to post guild authorization request');
+        });
+        await leaveUnauthorized(guild);
         return;
       }
 

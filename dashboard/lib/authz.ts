@@ -58,7 +58,8 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
   }
 
   try {
-    if (!(await createSupabaseServerClient())) {
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) {
       return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
     }
 
@@ -68,9 +69,21 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
     // RLS hides guilds the caller does not own; a miss is a 404 so we never
     // confirm that another tenant's guild exists.
     const server = await getServer(guildId);
-    // Ownership alone is not permission to operate a guild. The master-only
-    // whitelist gate must be positive before dashboard data or actions are exposed.
     if (!server || server.authorized !== true) return { ok: false, status: 404, error: 'Guild not found' };
+
+    const fixedGuild = guildId === process.env.DEV_GUILD_ID?.trim() || guildId === process.env.MAIN_GUILD_ID?.trim();
+    if (!fixedGuild) {
+      const { data: whitelist, error: whitelistError } = await supabase
+        .from('guild_whitelists')
+        .select('whitelist_type,expires_at')
+        .eq('guild_id', guildId)
+        .is('removed_at', null)
+        .maybeSingle();
+      if (whitelistError) return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
+      const active = whitelist?.whitelist_type === 'full' ||
+        (whitelist?.whitelist_type === 'temp' && typeof whitelist.expires_at === 'string' && Date.parse(whitelist.expires_at) > Date.now());
+      if (!active) return { ok: false, status: 404, error: 'Guild not found' };
+    }
   } catch {
     return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
   }
@@ -81,23 +94,17 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
 const MASTER_DISCORD_ID = '1479589523426902208';
 
 export type MasterAuthorization =
-  | { ok: true; userId: string; source: 'database' | 'environment' }
+  | { ok: true; userId: string; source: 'database' }
   | { ok: false; status: 401 | 403 | 503; error: string };
 
-/**
- * Resolve master access without trusting browser input. The DB flag/Discord
- * identity is authoritative when Supabase is available; the environment
- * fallback is only a server-side emergency bootstrap for the fixed operator.
- */
+/** Resolve master access only from server-controlled database identity data. */
 export async function authorizeMaster(): Promise<MasterAuthorization> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, status: 401, error: 'Authentication required' };
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    return process.env.MASTER_DISCORD_ID === MASTER_DISCORD_ID && user.user_metadata?.provider_id === MASTER_DISCORD_ID
-      ? { ok: true, userId: user.id, source: 'environment' }
-      : { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
+    return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
   }
 
   const { data, error } = await supabase
@@ -109,11 +116,6 @@ export async function authorizeMaster(): Promise<MasterAuthorization> {
 
   if (data?.is_master === true || data?.discord_id === MASTER_DISCORD_ID) {
     return { ok: true, userId: user.id, source: 'database' };
-  }
-
-  const providerId = user.user_metadata?.provider_id ?? user.user_metadata?.sub;
-  if (process.env.MASTER_DISCORD_ID === MASTER_DISCORD_ID && providerId === MASTER_DISCORD_ID) {
-    return { ok: true, userId: user.id, source: 'environment' };
   }
 
   return { ok: false, status: 403, error: 'Master access required' };
