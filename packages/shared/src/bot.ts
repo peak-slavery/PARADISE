@@ -33,6 +33,7 @@ import { startHealthServer, type HealthDeps, type HealthServer } from './health.
 import { DEFAULT_POLICY, enforceRateLimit, type RateLimitPolicy } from './rate-limit.js';
 import { replyOrFollowUp } from './responses.js';
 import { sanitizeReason, sanitizeText } from './sanitize.js';
+import { isBotOperational } from './control.js';
 import type { BotControlState, BotServices, CommandContext } from './types.js';
 import { BotInterlink } from './interlink.js';
 import type { InterlinkEvent } from './interlink.js';
@@ -295,15 +296,20 @@ function buildDashboardEmbed(payload: Record<string, unknown>): {
   };
 }
 
-async function handleDashboardEmbed(
+export async function handleDashboardEmbed(
   client: Client,
   event: InterlinkEvent,
   log: Logger,
   isAuthorized: (guildId: string) => Promise<boolean>,
+  isOperational: (guildId: string) => Promise<boolean>,
 ): Promise<void> {
   if (event.type !== 'dashboard.send_embed' || !event.guildId) return;
   if (!(await isAuthorized(event.guildId))) {
     log.warn({ guildId: event.guildId }, 'dashboard embed rejected for unauthorized guild');
+    return;
+  }
+  if (!(await isOperational(event.guildId))) {
+    log.warn({ guildId: event.guildId }, 'dashboard embed rejected for paused guild');
     return;
   }
   const channelId = boundedString(event.payload.channelId, 32);
@@ -492,7 +498,13 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
 
   const client = new Client(buildClientOptions(options));
   const stopInterlink = interlink.startPolling((event) =>
-    handleDashboardEmbed(client, event, log, (guildId) => isGuildAuthorized(supabase, guildId, env, kv)),
+    handleDashboardEmbed(
+      client,
+      event,
+      log,
+      (guildId) => isGuildAuthorized(supabase, guildId, env, kv),
+      async (guildId) => isBotOperational(await services.getControlState(guildId)),
+    ),
   );
   // Bot-specific handlers first; the shared universal commands are the fallback
   // so a bot can override /help or /about by defining its own.

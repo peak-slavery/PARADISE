@@ -7,7 +7,7 @@ import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
 import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
-import { buildClientOptions, parseGuildAuthorizationButton } from './bot.js';
+import { buildClientOptions, handleDashboardEmbed, parseGuildAuthorizationButton } from './bot.js';
 
 describe('Discord client options', () => {
   it('omits partials when they are not configured', () => {
@@ -208,6 +208,37 @@ describe('bot interlink', () => {
     await expect(
       interlink.publish('dashboard.send_embed', { content: 'x'.repeat(INTERLINK_MAX_BYTES) }, { targetBot: 'shanks' }),
     ).rejects.toThrow('32 KiB');
+  });
+
+  it('does not deliver queued embeds while the bot is paused', async () => {
+    let fetched = false;
+    const client = {
+      channels: {
+        fetch: async () => {
+          fetched = true;
+          throw new Error('channel fetch should not run');
+        },
+      },
+    } as never;
+    const event: InterlinkEvent = {
+      id: 'paused-event',
+      type: 'dashboard.send_embed',
+      sourceBot: 'dashboard',
+      targetBot: 'shanks',
+      guildId: '849213847293847021',
+      createdAt: new Date().toISOString(),
+      payload: { channelId: '123456789012345678' },
+    };
+
+    await handleDashboardEmbed(
+      client,
+      event,
+      { warn: () => undefined } as never,
+      async () => true,
+      async () => false,
+    );
+
+    expect(fetched).toBe(false);
   });
 
   it('polls only events targeted to the source bot once', async () => {
