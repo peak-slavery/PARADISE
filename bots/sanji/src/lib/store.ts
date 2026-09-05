@@ -174,6 +174,7 @@ const KIND_BY_LEVEL: Record<LogDoc['level'], EmbedKind> = {
   info: 'info',
   warn: 'warning',
   error: 'error',
+  critical: 'error',
 };
 
 /**

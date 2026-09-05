@@ -40,8 +40,14 @@ export async function updateSession(request: NextRequest): Promise<SessionRefres
           request.cookies.set(name, value);
         }
         supabaseResponse = NextResponse.next({ request });
+        const hardenedCookieOptions = {
+          path: '/',
+          httpOnly: true,
+          sameSite: 'lax' as const,
+          secure: process.env.NODE_ENV === 'production',
+        };
         for (const { name, value, options } of cookiesToSet) {
-          supabaseResponse.cookies.set(name, value, options);
+          supabaseResponse.cookies.set(name, value, { ...options, ...hardenedCookieOptions });
         }
       },
     },

@@ -68,7 +68,9 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
     // RLS hides guilds the caller does not own; a miss is a 404 so we never
     // confirm that another tenant's guild exists.
     const server = await getServer(guildId);
-    if (!server) return { ok: false, status: 404, error: 'Guild not found' };
+    // Ownership alone is not permission to operate a guild. The master-only
+    // whitelist gate must be positive before dashboard data or actions are exposed.
+    if (!server || server.authorized !== true) return { ok: false, status: 404, error: 'Guild not found' };
   } catch {
     return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
   }

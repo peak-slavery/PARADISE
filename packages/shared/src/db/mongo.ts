@@ -14,7 +14,7 @@ export interface LogDoc {
   channel_id: string | null;
   user_id: string | null;
   action: string;
-  level: 'debug' | 'info' | 'warn' | 'error';
+  level: 'debug' | 'info' | 'warn' | 'error' | 'critical';
   message: string;
   meta: Record<string, unknown>;
   created_at: Date;

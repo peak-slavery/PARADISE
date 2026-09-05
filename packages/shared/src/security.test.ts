@@ -152,9 +152,11 @@ describe('guild authorization', () => {
   it('authorizes only an explicit positive row', async () => {
     const build = (row: unknown, error: unknown = null) =>
       ({
-        from: () => ({
+        from: (table: string) => ({
           select: () => ({
-            eq: () => ({ maybeSingle: async () => ({ data: row, error }) }),
+            eq: () => table === 'guild_whitelists'
+              ? { is: () => ({ maybeSingle: async () => ({ data: null, error: { code: '42P01' } }) }) }
+              : { maybeSingle: async () => ({ data: row, error }) },
           }),
         }),
       }) as never;
@@ -162,6 +164,22 @@ describe('guild authorization', () => {
     await expect(isGuildAuthorized(build({ authorized: true }), '849213847293847021')).resolves.toBe(true);
     await expect(isGuildAuthorized(build({ authorized: false }), '849213847293847021')).resolves.toBe(false);
     await expect(isGuildAuthorized(build(null), '849213847293847021')).resolves.toBe(false);
+  });
+
+  it('does not fall back to stale authorization after a whitelist query error', async () => {
+    const failing = {
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            is: async () => table === 'guild_whitelists'
+              ? { data: null, error: { code: '500', message: 'temporary failure' } }
+              : { data: { authorized: true }, error: null },
+          }),
+        }),
+      }),
+    } as never;
+
+    await expect(isGuildAuthorized(failing, '849213847293847021')).resolves.toBe(false);
   });
 });
 

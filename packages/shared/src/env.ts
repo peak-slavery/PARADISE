@@ -26,6 +26,10 @@ const emptyToUndefined = (v: unknown): unknown =>
   typeof v === 'string' && v.trim() === '' ? undefined : v;
 
 const optString = z.preprocess(emptyToUndefined, z.string().optional());
+const optionalHttpsUrl = z.preprocess(
+  emptyToUndefined,
+  z.string().url().refine((value) => new URL(value).protocol === 'https:', 'must use HTTPS').optional(),
+);
 const csvIds = z.preprocess(
   (v) => (typeof v === 'string' ? v.split(',').map((s) => s.trim()).filter(Boolean) : []),
   z.array(z.string().regex(/^\d{5,25}$/, 'must be a Discord snowflake')),
@@ -52,7 +56,7 @@ const EnvSchema = z.object({
   MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
   DEV_AUTH_CHANNEL_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
 
-  SUPABASE_URL: optString,
+  SUPABASE_URL: optionalHttpsUrl,
   SUPABASE_SERVICE_ROLE_KEY: optString,
 
   MONGODB_URI: optString,
@@ -60,7 +64,7 @@ const EnvSchema = z.object({
   MONGODB_SECONDARY_URI: optString,
   MONGODB_SECONDARY_DB: z.string().default('eipointsecurity'),
 
-  UPSTASH_REDIS_REST_URL: optString,
+  UPSTASH_REDIS_REST_URL: optionalHttpsUrl,
   UPSTASH_REDIS_REST_TOKEN: optString,
 
   SENTRY_DSN: optString,

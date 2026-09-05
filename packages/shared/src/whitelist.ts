@@ -52,12 +52,12 @@ export async function isGuildWhitelisted(
         ? String((error as { code?: unknown }).code)
         : '';
       useLegacyAuthorization = code === '42P01' || code === 'PGRST205';
+      if (error && !useLegacyAuthorization) return false;
     }
   } catch {
-    // The old test/deployment client has no `is` filter. A real Supabase
-    // network/query error must fail closed and must not fall through to a stale
-    // legacy authorization row.
-    useLegacyAuthorization = true;
+    // A real Supabase network/query error must fail closed and must not fall
+    // through to a stale legacy authorization row.
+    return false;
   }
 
   if (!useLegacyAuthorization) {

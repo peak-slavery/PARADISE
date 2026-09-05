@@ -64,7 +64,7 @@ db.runCommand({
       properties: {
         bot_id: { bsonType: 'string' },
         action: { bsonType: 'string' },
-        level: { enum: ['debug', 'info', 'warn', 'error'] },
+        level: { enum: ['debug', 'info', 'warn', 'error', 'critical'] },
         message: { bsonType: 'string' },
         created_at: { bsonType: 'date' },
       },

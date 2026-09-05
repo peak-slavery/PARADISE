@@ -295,8 +295,17 @@ function buildDashboardEmbed(payload: Record<string, unknown>): {
   };
 }
 
-async function handleDashboardEmbed(client: Client, event: InterlinkEvent, log: Logger): Promise<void> {
+async function handleDashboardEmbed(
+  client: Client,
+  event: InterlinkEvent,
+  log: Logger,
+  isAuthorized: (guildId: string) => Promise<boolean>,
+): Promise<void> {
   if (event.type !== 'dashboard.send_embed' || !event.guildId) return;
+  if (!(await isAuthorized(event.guildId))) {
+    log.warn({ guildId: event.guildId }, 'dashboard embed rejected for unauthorized guild');
+    return;
+  }
   const channelId = boundedString(event.payload.channelId, 32);
   if (!channelId || !/^\d{17,20}$/.test(channelId)) return;
 
@@ -478,7 +487,9 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   };
 
   const client = new Client(buildClientOptions(options));
-  const stopInterlink = interlink.startPolling((event) => handleDashboardEmbed(client, event, log));
+  const stopInterlink = interlink.startPolling((event) =>
+    handleDashboardEmbed(client, event, log, (guildId) => isGuildAuthorized(supabase, guildId, env, kv)),
+  );
   // Bot-specific handlers first; the shared universal commands are the fallback
   // so a bot can override /help or /about by defining its own.
   const runner = new LazyCommandRunner([options.commandsDir, UNIVERSAL_COMMANDS_DIR]);

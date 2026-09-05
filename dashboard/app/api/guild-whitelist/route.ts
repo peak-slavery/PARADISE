@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeMaster } from '@/lib/authz';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   const type = body.whitelist_type as 'full' | 'temp' | 'unauthorised';
   const expiresAt = typeof body.expires_at === 'string' ? body.expires_at : null;
   if (type === 'temp' && (!expiresAt || Date.parse(expiresAt) <= Date.now())) return NextResponse.json({ error: 'Temporary whitelist must expire in the future' }, { status: 400 });
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: 'Dashboard backend is unavailable' }, { status: 503 });
   const { error: revokeError } = await supabase.from('guild_whitelists').update({ removed_at: new Date().toISOString(), removed_by: access.userId }).eq('guild_id', body.guild_id).is('removed_at', null);
   if (revokeError) return NextResponse.json({ error: 'Unable to replace guild whitelist' }, { status: 503 });

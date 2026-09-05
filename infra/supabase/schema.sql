@@ -354,9 +354,11 @@ drop policy if exists servers_owner_select on public.servers;
 create policy servers_owner_select on public.servers
   for select using (public.can_access_guild(guild_id));
 
+-- `authorized` is the master-only server-lock gate. Browser sessions must
+-- never be able to update this table; whitelist routes use the service-role
+-- client after `authorizeMaster()` has succeeded.
 drop policy if exists servers_owner_update on public.servers;
-create policy servers_owner_update on public.servers
-  for update using (public.can_access_guild(guild_id)) with check (public.can_access_guild(guild_id));
+revoke update on public.servers from anon, authenticated;
 
 -- Master-only infrastructure metadata. Secret values are never stored here;
 -- secret_ref points to the deployment secret manager key.

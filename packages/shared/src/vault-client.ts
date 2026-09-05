@@ -21,10 +21,17 @@ export async function loadVaultSecret(name: string): Promise<string | null> {
   const botId = process.env.BOT_ID?.trim();
   const hmacSecret = process.env.HMAC_SECRET?.trim();
   if (!baseUrl || !botId || !hmacSecret) return null;
+  let dashboardUrl: URL;
+  try {
+    dashboardUrl = new URL(baseUrl);
+    if (dashboardUrl.protocol !== 'https:') return null;
+  } catch {
+    return null;
+  }
   const body = JSON.stringify({ request_id: randomUUID().replace(/-/g, ''), bot_id: botId });
   const timestamp = String(Math.floor(Date.now() / 1000));
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/internal/secret/${encodeURIComponent(name)}`, {
+    const response = await fetch(`${dashboardUrl.origin}/api/internal/secret/${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
