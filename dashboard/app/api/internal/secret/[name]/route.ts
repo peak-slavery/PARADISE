@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { BOT_IDS, getAllowedRuntimeSecrets } from '@eiflow/secret-policy';
 
-import { BOTS, isBotId } from '@/lib/bots';
+import { isBotId } from '@/lib/bots';
 import { credentials } from '@/lib/demo';
 import { HMAC_SIGNATURE_HEADER, HMAC_TIMESTAMP_HEADER, verifyRequest } from '@/lib/hmac';
 import { loadSecret } from '@/lib/secret-vault';
@@ -13,17 +14,7 @@ const MAX_BODY_BYTES = 4 * 1024;
 const NAME_PATTERN = /^[a-z][a-z0-9_.:-]{1,127}$/;
 
 const BOT_SECRET_ALLOWLIST: Record<string, readonly string[]> = Object.fromEntries(
-  BOTS.map((bot) => [bot.id, [
-    `discord.${bot.id}.token`,
-    'mongodb.primary.uri',
-    'mongodb.primary.database',
-    'mongodb.secondary.uri',
-    'mongodb.secondary.database',
-    'redis.primary.url',
-    'redis.primary.token',
-    'supabase.runtime.url',
-    'supabase.runtime.service_key',
-  ]]),
+  BOT_IDS.map((botId) => [botId, getAllowedRuntimeSecrets(botId)]),
 );
 
 function botSecret(botId: string): string {
@@ -34,8 +25,8 @@ function botSecret(botId: string): string {
       const value = parsed[botId];
       const entries = Object.entries(parsed);
       if (
-        entries.length === BOTS.length &&
-        BOTS.every(({ id }) => typeof parsed[id] === 'string') &&
+        entries.length === BOT_IDS.length &&
+        BOT_IDS.every((id) => typeof parsed[id] === 'string') &&
         entries.every(([, candidate]) => typeof candidate === 'string' && isStrongSecret(candidate)) &&
         new Set(Object.values(parsed)).size === entries.length &&
         typeof value === 'string'

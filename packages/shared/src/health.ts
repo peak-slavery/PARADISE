@@ -18,6 +18,18 @@ export interface HealthDeps {
   writes1h: () => number;
 }
 
+export interface HealthBindOptions {
+  port: number;
+  botId: string;
+  version: string;
+  startedAt: number;
+  log: Logger;
+}
+
+export interface HealthServer extends Server {
+  setDependencies(deps: HealthDeps): void;
+}
+
 export interface HealthPayload {
   status: 'ok' | 'degraded';
   uptime: number;
@@ -92,7 +104,8 @@ export async function buildHealthPayload(deps: HealthDeps): Promise<HealthPayloa
  * Minimal HTTP surface for UptimeRobot: GET /health hits every backing service
  * so a degraded bot reports degraded instead of silently 200ing.
  */
-export function startHealthServer(deps: HealthDeps): Promise<Server> {
+export function startHealthServer(options: HealthBindOptions): Promise<HealthServer> {
+  let runtimeDeps: HealthDeps | null = null;
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const send = (code: number, body: string): void => {
       res.writeHead(code, {
@@ -115,10 +128,16 @@ export function startHealthServer(deps: HealthDeps): Promise<Server> {
     }
 
     const detailed = hasDiagnosticsAccess(req);
+    if (!runtimeDeps) {
+      send(200, JSON.stringify({ status: 'starting', bot_id: options.botId, version: options.version }));
+      return;
+    }
+
+    const healthDeps = runtimeDeps;
     const healthPromise =
       cachedHealth && cachedHealth.expiresAt > Date.now()
         ? Promise.resolve(cachedHealth.payload)
-        : buildHealthPayload(deps).then((payload) => {
+        : buildHealthPayload(healthDeps).then((payload) => {
             cachedHealth = { payload, expiresAt: Date.now() + HEALTH_CACHE_MS };
             return payload;
           });
@@ -140,18 +159,25 @@ export function startHealthServer(deps: HealthDeps): Promise<Server> {
         );
       })
       .catch((err: unknown) => {
-        deps.log.error({ err }, 'health check failed');
+        healthDeps.log.error({ err }, 'health check failed');
         send(500, JSON.stringify({ status: 'degraded', error: 'health check failed' }));
       });
   });
 
-  server.on('error', (err) => deps.log.error({ err }, 'health server error'));
+  const healthServer = server as HealthServer;
+  healthServer.setDependencies = (deps: HealthDeps): void => {
+    runtimeDeps = deps;
+    cachedHealth = null;
+  };
+  server.on('error', (err) => {
+    (runtimeDeps?.log ?? options.log).error({ err }, 'health server error');
+  });
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(deps.env.port, '0.0.0.0', () => {
-      deps.log.info({ port: deps.env.port }, 'health server listening');
-      resolve(server);
+    server.listen(options.port, '0.0.0.0', () => {
+      options.log.info({ port: options.port }, 'health server listening');
+      resolve(healthServer);
     });
   });
 }

@@ -11,7 +11,7 @@ import {
   type GuildMember,
   type User,
 } from 'discord.js';
-import { loadEnv, type Env } from './env.js';
+import { loadEnv, resetEnvCache, type Env } from './env.js';
 import { createLogger, type Logger } from './logger.js';
 import {
   guard,
@@ -29,7 +29,7 @@ import { createEmbedFactory, type EmbedFactory } from './embed.js';
 import { QueueTimeoutError, ServiceBusyError, TaskQueue, type QueueOptions } from './queue.js';
 import { LazyCommandRunner, UNIVERSAL_COMMANDS_DIR } from './commands.js';
 import { attachServerLock, isGuildAuthorized } from './server-lock.js';
-import { startHealthServer, type HealthDeps } from './health.js';
+import { startHealthServer, type HealthDeps, type HealthServer } from './health.js';
 import { DEFAULT_POLICY, enforceRateLimit, type RateLimitPolicy } from './rate-limit.js';
 import { replyOrFollowUp } from './responses.js';
 import { sanitizeReason, sanitizeText } from './sanitize.js';
@@ -314,7 +314,34 @@ async function handleDashboardEmbed(client: Client, event: InterlinkEvent, log: 
 export async function createBot(options: CreateBotOptions): Promise<BotRuntime> {
   const startedAt = Date.now();
 
-  await hydrateRuntimeSecrets();
+  // Validate explicit bootstrap values, especially DISCORD_TOKEN, before any
+  // optional vault work. The health server binds from this immutable snapshot;
+  // the final environment is loaded only after hydration has settled.
+  const bootstrapEnv = loadEnv();
+  const bootstrapLog = createLogger(bootstrapEnv);
+  const server: HealthServer = await startHealthServer({
+    port: bootstrapEnv.port,
+    botId: bootstrapEnv.botId,
+    version: bootstrapEnv.botVersion,
+    startedAt,
+    log: bootstrapLog,
+  });
+
+  try {
+    const hydration = await hydrateRuntimeSecrets({ botId: bootstrapEnv.botId });
+    if (hydration.missing.length || hydration.failed.length) {
+      bootstrapLog.warn(
+        { missing: hydration.missing, failed: hydration.failed },
+        'optional vault hydration incomplete; continuing degraded',
+      );
+    }
+  } catch (error) {
+    bootstrapLog.warn({ err: error }, 'optional vault hydration failed; continuing degraded');
+  }
+
+  // loadEnv memoizes its result, so discard the bootstrap snapshot before
+  // constructing clients that consume newly hydrated optional credentials.
+  resetEnvCache();
   const env = loadEnv();
   const log = createLogger(env);
 
@@ -339,16 +366,8 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   let writeWindowStart = Date.now();
 
   /* --- health + uptime --------------------------------------------------- *
-   * The port is opened BEFORE any blocking database work.
-   *
-   * Render gives a new service only a few tens of seconds to expose a port.
-   * connectMongo and connectSecondaryMongo each retry for up to ~24s when a
-   * database is unreachable, which previously pushed the bind past that window
-   * and failed the deploy with "No open ports detected" — even though the bot
-   * was healthy and would have recovered via the reconnect timer.
-   *
-   * `getMongo` is a lazy getter, so the endpoint still reports the true
-   * connection state once the handles are assigned below.
+   * The port is opened before vault and database work. Render can therefore
+   * observe process liveness while optional integrations recover.
    * --------------------------------------------------------------------- */
   const healthDeps: HealthDeps = {
     env,
@@ -366,8 +385,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
       return writeCount;
     },
   };
-
-  const server = await startHealthServer(healthDeps);
+  server.setDependencies(healthDeps);
 
   // Port is live, so blocking database connects are now safe to run.
   mongoHandle = await connectMongo(env, log);

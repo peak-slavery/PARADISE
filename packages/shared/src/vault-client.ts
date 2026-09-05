@@ -1,8 +1,14 @@
 import { randomUUID, createHmac } from 'node:crypto';
+import {
+  getRuntimeSecretMappings,
+  isBotId,
+  type RuntimeSecretMapping,
+} from '@eiflow/secret-policy';
 
 type VaultCacheEntry = { value: string; expiresAt: number };
 const cache = new Map<string, VaultCacheEntry>();
 const CACHE_TTL_MS = 5 * 60_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 
 function sign(secret: string, timestamp: string, body: string): string {
   return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
@@ -14,9 +20,7 @@ export async function loadVaultSecret(name: string): Promise<string | null> {
   const baseUrl = process.env.DASHBOARD_URL?.trim();
   const botId = process.env.BOT_ID?.trim();
   const hmacSecret = process.env.HMAC_SECRET?.trim();
-  if (!baseUrl || !botId || !hmacSecret) {
-    return null;
-  }
+  if (!baseUrl || !botId || !hmacSecret) return null;
   const body = JSON.stringify({ request_id: randomUUID().replace(/-/g, ''), bot_id: botId });
   const timestamp = String(Math.floor(Date.now() / 1000));
   try {
@@ -29,7 +33,7 @@ export async function loadVaultSecret(name: string): Promise<string | null> {
         'x-pe-signature': sign(hmacSecret, timestamp, body),
       },
       body,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (response.status === 404) return null;
     if (!response.ok) return null;
@@ -42,30 +46,50 @@ export async function loadVaultSecret(name: string): Promise<string | null> {
   }
 }
 
-/**
- * Hydrate only provider credentials that are absent from the process env. The
- * bot keeps Discord identity/HMAC configuration local, while MongoDB, Redis,
- * runtime Supabase, and optional provider credentials can remain in the vault.
- */
-export async function hydrateRuntimeSecrets(): Promise<void> {
-  const mappings = [
-    ['DISCORD_TOKEN', `discord.${process.env.BOT_ID ?? ''}.token`],
-    ['SUPABASE_URL', 'supabase.runtime.url'],
-    ['SUPABASE_SERVICE_ROLE_KEY', 'supabase.runtime.service_key'],
-    ['MONGODB_URI', 'mongodb.primary.uri'],
-    ['MONGODB_DB', 'mongodb.primary.database'],
-    ['MONGODB_SECONDARY_URI', 'mongodb.secondary.uri'],
-    ['MONGODB_SECONDARY_DB', 'mongodb.secondary.database'],
-    ['UPSTASH_REDIS_REST_URL', 'redis.primary.url'],
-    ['UPSTASH_REDIS_REST_TOKEN', 'redis.primary.token'],
-  ] as const;
-  if (!process.env.DASHBOARD_URL?.trim() || !process.env.BOT_ID?.trim() || !process.env.HMAC_SECRET?.trim()) return;
+export type HydrationResult = {
+  attempted: string[];
+  loaded: string[];
+  missing: string[];
+  failed: string[];
+};
 
-  for (const [envName, secretName] of mappings) {
-    if (process.env[envName]?.trim() || secretName.endsWith('.token') && !process.env.BOT_ID?.trim()) continue;
-    const value = await loadVaultSecret(secretName);
-    if (value) process.env[envName] = value;
+/**
+ * Hydrate only the runtime records allowed for this bot and absent from its
+ * explicit environment. Discord identity is deliberately never vault-backed:
+ * a bot must receive its token directly from the hosting provider.
+ */
+export async function hydrateRuntimeSecrets(options: {
+  botId?: string;
+  fetchSecret?: (name: string) => Promise<string | null>;
+} = {}): Promise<HydrationResult> {
+  const botId = options.botId ?? process.env.BOT_ID?.trim();
+  const mappings = getRuntimeSecretMappings(botId);
+  const result: HydrationResult = { attempted: [], loaded: [], missing: [], failed: [] };
+  if (!isBotId(botId) || !process.env.DASHBOARD_URL?.trim() || !process.env.HMAC_SECRET?.trim()) return result;
+
+  const pending = mappings.filter(({ envName }) => !process.env[envName]?.trim());
+  result.attempted.push(...pending.map(({ name }) => name));
+  const fetchSecret = options.fetchSecret ?? loadVaultSecret;
+  const settled = await Promise.allSettled(pending.map(async (mapping) => ({
+    mapping,
+    value: await fetchSecret(mapping.name),
+  })));
+
+  for (let index = 0; index < settled.length; index += 1) {
+    const mapping = pending[index] as RuntimeSecretMapping;
+    const outcome = settled[index];
+    if (!outcome || outcome.status === 'rejected') {
+      result.failed.push(mapping.name);
+      continue;
+    }
+    if (outcome.value.value) {
+      process.env[mapping.envName] = outcome.value.value;
+      result.loaded.push(mapping.name);
+    } else {
+      result.missing.push(mapping.name);
+    }
   }
+  return result;
 }
 
 export function clearVaultSecretCache(): void {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeGuildOrMaster, isDiscordSnowflake } from '@/lib/authz';
+import { validateJsonbObject } from '@/lib/jsonb';
 import { createSupabaseServerClient, getCurrentUser } from '@/lib/supabase/server';
 
 const themes = new Set(['light', 'dark', 'system']);
@@ -34,7 +35,10 @@ export async function PATCH(
   if (body.theme !== undefined && (typeof body.theme !== 'string' || !themes.has(body.theme))) return NextResponse.json({ error: 'Invalid theme' }, { status: 400 });
   if (body.notifications_enabled !== undefined && typeof body.notifications_enabled !== 'boolean') return NextResponse.json({ error: 'Invalid notifications_enabled' }, { status: 400 });
   if (body.server_paused !== undefined && typeof body.server_paused !== 'boolean') return NextResponse.json({ error: 'Invalid server_paused' }, { status: 400 });
-  if (body.notification_preferences !== undefined && (!body.notification_preferences || typeof body.notification_preferences !== 'object' || Array.isArray(body.notification_preferences))) return NextResponse.json({ error: 'Invalid notification_preferences' }, { status: 400 });
+  if (body.notification_preferences !== undefined) {
+    const prefs = validateJsonbObject(body.notification_preferences);
+    if (!prefs.ok) return NextResponse.json({ error: `Invalid notification_preferences: ${prefs.reason}` }, { status: 400 });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase) return NextResponse.json({ error: 'Dashboard backend is unavailable' }, { status: 503 });
   const user = await getCurrentUser();

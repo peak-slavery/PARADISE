@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { authorizationResponse, boundedJson } from '@/lib/api-response';
 import { authorizeGuildOrMaster, isDiscordSnowflake } from '@/lib/authz';
+import { validateJsonbObject } from '@/lib/jsonb';
 import { createSupabaseServerClient, getCurrentUser } from '@/lib/supabase/server';
 import type { BotId } from '@/lib/types';
 
@@ -29,7 +30,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.bot_id !== 'string' || !botIds.has(body.bot_id as BotId)) return NextResponse.json({ error: 'Invalid bot_id' }, { status: 400 });
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return NextResponse.json({ error: 'Invalid enabled' }, { status: 400 });
   if (body.paused !== undefined && typeof body.paused !== 'boolean') return NextResponse.json({ error: 'Invalid paused' }, { status: 400 });
-  if (body.feature_flags !== undefined && (!body.feature_flags || typeof body.feature_flags !== 'object' || Array.isArray(body.feature_flags))) return NextResponse.json({ error: 'Invalid feature_flags' }, { status: 400 });
+  if (body.feature_flags !== undefined) {
+    const flags = validateJsonbObject(body.feature_flags);
+    if (!flags.ok) return NextResponse.json({ error: `Invalid feature_flags: ${flags.reason}` }, { status: 400 });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase) return NextResponse.json({ error: 'Dashboard backend is unavailable' }, { status: 503 });
   const user = await getCurrentUser();
