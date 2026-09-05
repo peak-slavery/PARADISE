@@ -63,11 +63,11 @@ export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Pro
     const hours = type === 'temp' ? ctx.interaction.options.getInteger('hours', true) : undefined;
     const expiresAt = hours ? new Date(Date.now() + hours * 60 * 60_000).toISOString() : null;
     const note = ctx.interaction.options.getString('note');
-    await writeGuildWhitelist(supabase, { guildId, type, expiresAt, note });
+    await writeGuildWhitelist(supabase, { guildId, type, expiresAt, note, kv: ctx.services.redis });
     await ctx.success('Guild authorized', type === 'temp' ? `Temporary access granted for ${hours} hour(s).` : 'Full access granted.', true);
     return;
   }
 
-  await removeGuildWhitelist(supabase, guildId);
+  await removeGuildWhitelist(supabase, guildId, null, ctx.services.redis);
   await ctx.success('Guild unauthorized', 'Commands are now locked for this guild.', true);
 }

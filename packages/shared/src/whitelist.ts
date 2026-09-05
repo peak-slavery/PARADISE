@@ -101,6 +101,7 @@ export async function writeGuildWhitelist(
     expiresAt?: string | null;
     note?: string | null;
     addedBy?: string | null;
+    kv?: Kv | null;
   },
 ): Promise<GuildWhitelistRow> {
   if (!validGuildId(input.guildId)) throw new Error('Invalid guild id');
@@ -116,6 +117,7 @@ export async function writeGuildWhitelist(
     p_added_by: input.addedBy ?? null,
   });
   if (error || !data) throw error ?? new Error('Whitelist write returned no row');
+  await invalidateGuildWhitelistCache(input.kv, input.guildId);
   return data as GuildWhitelistRow;
 }
 
@@ -123,10 +125,12 @@ export async function removeGuildWhitelist(
   supabase: TypedSupabase,
   guildId: string,
   removedBy?: string | null,
+  kv?: Kv | null,
 ): Promise<void> {
   const { error } = await supabase.rpc('revoke_guild_whitelist', {
     p_guild_id: guildId,
     p_removed_by: removedBy ?? null,
   });
   if (error) throw error;
+  await invalidateGuildWhitelistCache(kv, guildId);
 }

@@ -549,7 +549,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         const { decision, guildId } = authorization;
         const type = decision === 'deny' ? 'unauthorised' : decision;
         const expiresAt = decision === 'temp' ? new Date(Date.now() + 24 * 60 * 60_000).toISOString() : null;
-        await writeGuildWhitelist(supabase, { guildId, type: type as 'full' | 'temp' | 'unauthorised', expiresAt });
+        await writeGuildWhitelist(supabase, { guildId, type: type as 'full' | 'temp' | 'unauthorised', expiresAt, kv });
         await invalidateGuildWhitelistCache(kv, guildId);
         await interaction.update({ components: [], content: `Authorization decision: ${decision === 'deny' ? 'denied' : decision === 'temp' ? 'temporary 24h' : 'full access'}` });
       } catch (error) {

@@ -63,7 +63,17 @@ as $$
 declare
   inserted_nonce_count integer;
 begin
-  if not exists (select 1 from public.servers where guild_id = p_guild_id and authorized = true) then
+  if not exists (select 1 from public.servers where guild_id = p_guild_id and authorized = true)
+     or exists (
+       select 1
+       from public.guild_whitelists
+       where guild_id = p_guild_id
+         and removed_at is null
+         and (
+           whitelist_type = 'unauthorised'
+           or (whitelist_type = 'temp' and (expires_at is null or expires_at <= now()))
+         )
+     ) then
     raise exception 'guild is not authorized';
   end if;
 
