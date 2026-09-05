@@ -3,7 +3,7 @@ services:
     name: eiflow-niko-robin
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-niko-robin
     healthCheckPath: /health
@@ -56,7 +56,7 @@ services:
     name: eiflow-boahancock
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-boahancock
     healthCheckPath: /health
@@ -105,7 +105,7 @@ services:
     name: eiflow-nami
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-nami
     healthCheckPath: /health
@@ -154,7 +154,7 @@ services:
     name: eiflow-cyrene
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-cyrene
     healthCheckPath: /health
@@ -215,7 +215,7 @@ services:
     name: eiflow-zoro
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-zoro
     healthCheckPath: /health
@@ -270,7 +270,7 @@ services:
     name: eiflow-shanks
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-shanks
     healthCheckPath: /health
@@ -319,7 +319,7 @@ services:
     name: eiflow-luffy
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-luffy
     healthCheckPath: /health
@@ -368,7 +368,7 @@ services:
     name: eiflow-sanji
     runtime: node
     rootDir: .
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run start -w @eiflow/bot-sanji
     healthCheckPath: /health

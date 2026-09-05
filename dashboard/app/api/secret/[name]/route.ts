@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { authorizationResponse, invalidJsonResponse } from '@/lib/api-response';
 import { authorizeMaster } from '@/lib/authz';
+import { validateJsonbObject } from '@/lib/jsonb';
 import { revokeSecret, rotateSecret, loadSecretRecord } from '@/lib/secret-vault';
 
 export const runtime = 'nodejs';
@@ -50,11 +51,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!plaintext || !providers.has(provider) || !label.trim()) {
     return NextResponse.json({ error: 'Expected plaintext, provider, and label' }, { status: 400 });
   }
-  const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
-    ? body.metadata as Record<string, unknown>
-    : {};
+  let metadataValue: Record<string, unknown> = {};
+  if (body.metadata !== undefined && body.metadata !== null) {
+    const meta = validateJsonbObject(body.metadata);
+    if (!meta.ok) return NextResponse.json({ error: `Invalid metadata: ${meta.reason}` }, { status: 400 });
+    metadataValue = meta.value ?? {};
+  }
   try {
-    const secret = await rotateSecret({ name, provider: provider as Parameters<typeof rotateSecret>[0]['provider'], label, plaintext, metadata, createdBy: access.userId });
+    const secret = await rotateSecret({ name, provider: provider as Parameters<typeof rotateSecret>[0]['provider'], label, plaintext, metadata: metadataValue, createdBy: access.userId });
     return NextResponse.json({ secret }, { status: 201, headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
