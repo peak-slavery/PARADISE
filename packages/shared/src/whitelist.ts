@@ -3,6 +3,7 @@ import type { Env } from './env.js';
 import type { Kv } from './redis.js';
 
 export type WhitelistType = GuildWhitelistRow['whitelist_type'];
+export type GuildAuthorizationResult = 'allowed' | 'denied' | 'unavailable';
 const CACHE_TTL_SECONDS = 60;
 
 function validGuildId(guildId: string): boolean {
@@ -13,22 +14,22 @@ export function isPermanentGuild(env: Pick<Env, 'devGuildId' | 'mainGuildId'>, g
   return Boolean(guildId && (guildId === env.devGuildId || guildId === env.mainGuildId));
 }
 
-/** Resolve the command whitelist. Missing stores and query errors fail closed. */
-export async function isGuildWhitelisted(
+/** Resolve the command whitelist with outage state preserved for reconciliation. */
+export async function resolveGuildAuthorization(
   supabase: TypedSupabase | null,
   guildId: string,
   env?: Pick<Env, 'devGuildId' | 'mainGuildId'>,
   kv?: Kv,
-): Promise<boolean> {
-  if (!validGuildId(guildId)) return false;
-  if (env && isPermanentGuild(env, guildId)) return true;
-  if (!supabase) return false;
+): Promise<GuildAuthorizationResult> {
+  if (!validGuildId(guildId)) return 'denied';
+  if (env && isPermanentGuild(env, guildId)) return 'allowed';
+  if (!supabase) return 'unavailable';
 
   const cacheKey = `wl:active:${guildId}`;
   if (kv) {
     try {
       const cached = await kv.get<{ allowed: boolean }>(cacheKey);
-      if (cached && typeof cached.allowed === 'boolean') return cached.allowed;
+      if (cached && typeof cached.allowed === 'boolean') return cached.allowed ? 'allowed' : 'denied';
     } catch {
       // Cache failures must never widen access. Resolve from Supabase below.
     }
@@ -52,17 +53,15 @@ export async function isGuildWhitelisted(
         ? String((error as { code?: unknown }).code)
         : '';
       useLegacyAuthorization = code === '42P01' || code === 'PGRST205';
-      if (error && !useLegacyAuthorization) return false;
+      if (error && !useLegacyAuthorization) return 'unavailable';
     }
   } catch {
-    // A real Supabase network/query error must fail closed and must not fall
-    // through to a stale legacy authorization row.
-    return false;
+    return 'unavailable';
   }
 
   if (!useLegacyAuthorization) {
     if (kv) await kv.set(cacheKey, { allowed }, CACHE_TTL_SECONDS).catch(() => undefined);
-    return allowed;
+    return allowed ? 'allowed' : 'denied';
   }
 
   try {
@@ -71,12 +70,22 @@ export async function isGuildWhitelisted(
       .select('authorized')
       .eq('guild_id', guildId)
       .maybeSingle();
-    allowed = !error && data?.authorized === true;
+    if (error) return 'unavailable';
+    allowed = data?.authorized === true;
   } catch {
-    allowed = false;
+    return 'unavailable';
   }
   if (kv) await kv.set(cacheKey, { allowed }, CACHE_TTL_SECONDS).catch(() => undefined);
-  return allowed;
+  return allowed ? 'allowed' : 'denied';
+}
+
+export async function isGuildWhitelisted(
+  supabase: TypedSupabase | null,
+  guildId: string,
+  env?: Pick<Env, 'devGuildId' | 'mainGuildId'>,
+  kv?: Kv,
+): Promise<boolean> {
+  return (await resolveGuildAuthorization(supabase, guildId, env, kv)) === 'allowed';
 }
 
 export async function invalidateGuildWhitelistCache(kv: Kv | null | undefined, guildId: string): Promise<void> {

@@ -9,7 +9,6 @@ import {
   verifyRequest,
 } from '@/lib/hmac';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
-import { consumeNonce } from '@/lib/internal-auth';
 import type { ConfigValues } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -183,44 +182,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Supabase is not configured' }, { status: 503 });
   }
 
-  // The HMAC proves which bot signed the request, not that the bot may modify
-  // the supplied guild. Require a positively authorized server before using
-  // the service-role client for the config write.
-  const { data: server, error: serverError } = await supabase
-    .from('servers')
-    .select('authorized')
-    .eq('guild_id', guildId)
-    .maybeSingle();
-  if (serverError) {
-    console.error('[internal/config] guild authorization lookup failed', { code: serverError.code });
-    return NextResponse.json({ error: 'Configuration write failed' }, { status: 503 });
-  }
-  if (server?.authorized !== true) {
-    return NextResponse.json({ error: 'Guild is not authorized' }, { status: 403 });
-  }
-
-  const { error } = await supabase.from('bot_configs').upsert(
-    {
-      guild_id: guildId,
-      bot_id: botId,
-      config: clean,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'guild_id,bot_id' },
-  );
-
+  const { data: applied, error } = await supabase.rpc('apply_bot_config_request', {
+    p_request_id: requestId,
+    p_guild_id: guildId,
+    p_bot_id: botId,
+    p_config: clean,
+  });
   if (error) {
-    console.error('[internal/config] configuration write failed', { code: error.code });
+    if (error.message === 'guild is not authorized') {
+      return NextResponse.json({ error: 'Guild is not authorized' }, { status: 403 });
+    }
+    console.error('[internal/config] atomic configuration write failed', { code: error.code });
     return NextResponse.json({ error: 'Configuration write failed' }, { status: 500 });
   }
-
-  try {
-    if (!await consumeNonce(requestId)) {
-      return NextResponse.json({ error: 'Request already processed' }, { status: 409 });
-    }
-  } catch (nonceError) {
-    console.error('[internal/config] nonce insert failed', { error: nonceError });
-    return NextResponse.json({ error: 'Configuration write failed' }, { status: 500 });
+  if (applied !== true) {
+    return NextResponse.json({ error: 'Request already processed' }, { status: 409 });
   }
 
   // Echo a fresh signature so a bot can verify round-trip parity in tests.

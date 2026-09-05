@@ -222,7 +222,17 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      apply_bot_config_request: {
+        Args: {
+          p_request_id: string;
+          p_guild_id: string;
+          p_bot_id: string;
+          p_config: Record<string, unknown>;
+        };
+        Returns: boolean;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

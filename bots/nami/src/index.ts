@@ -173,13 +173,12 @@ await createBot({
       }
     });
 
-    /* --- flush pending XP on shutdown ----------------------------------- */
-    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-      process.once(signal, () => {
-        void tracker.flush().then(() => log.info({ pending: tracker.pending }, 'xp flush on shutdown finished'));
-      });
-    }
-
     log.info({ guilds: client.guilds.cache.size }, 'levelup bot initialised');
+
+    return async () => {
+      clearInterval(refresher);
+      await tracker.flush();
+      tracker.stop();
+    };
   },
 });

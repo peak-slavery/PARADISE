@@ -27,7 +27,7 @@ export interface BatchWriterOptions<T extends Document> {
 export interface BatchWriter<T extends Document> {
   push(doc: T): void;
   flush(): Promise<void>;
-  stop(): void;
+  stop(): Promise<void>;
   stats(): { buffered: number; flushed: number; failed: number };
 }
 
@@ -44,35 +44,37 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
 
   let buffer: T[] = [];
   let timer: NodeJS.Timeout | null = null;
-  let flushing = false;
+  let flushing: Promise<void> | null = null;
   let flushed = 0;
   let failed = 0;
 
   const flush = async (): Promise<void> => {
-    if (flushing || buffer.length === 0) return;
+    if (flushing) return flushing;
+    if (buffer.length === 0) return;
     const collection = opts.getCollection();
     if (!collection) {
-      // Drop rather than grow unbounded when the store is unavailable.
       buffer = [];
       return;
     }
 
-    flushing = true;
     const batch = buffer;
     buffer = [];
-    try {
-      if (opts.write) {
-        await opts.write(collection, batch);
-      } else {
-        await collection.insertMany(batch as OptionalUnlessRequiredId<T>[], { ordered: false });
+    flushing = (async () => {
+      try {
+        if (opts.write) {
+          await opts.write(collection, batch);
+        } else {
+          await collection.insertMany(batch as OptionalUnlessRequiredId<T>[], { ordered: false });
+        }
+        flushed += batch.length;
+      } catch (err) {
+        failed += batch.length;
+        opts.onError?.(err, batch.length);
+      } finally {
+        flushing = null;
       }
-      flushed += batch.length;
-    } catch (err) {
-      failed += batch.length;
-      opts.onError?.(err, batch.length);
-    } finally {
-      flushing = false;
-    }
+    })();
+    return flushing;
   };
 
   timer = setInterval(() => {
@@ -86,10 +88,10 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
       if (buffer.length >= maxBatch) void flush();
     },
     flush,
-    stop() {
+    async stop() {
       if (timer) clearInterval(timer);
       timer = null;
-      void flush();
+      await flush();
     },
     stats: () => ({ buffered: buffer.length, flushed, failed }),
   };

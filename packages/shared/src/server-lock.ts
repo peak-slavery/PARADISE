@@ -10,7 +10,7 @@ import type { TypedSupabase } from './db/supabase.js';
 import type { Logger } from './logger.js';
 import { reportError } from './errors.js';
 import type { Env } from './env.js';
-import { isGuildWhitelisted, isPermanentGuild } from './whitelist.js';
+import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
 import type { Kv } from './redis.js';
 
 export interface ServerLockDeps {
@@ -108,8 +108,11 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): void {
           await upsertServer(deps.supabase, guild, true);
           continue;
         }
-        if (!(await isGuildAuthorized(deps.supabase, guild.id, deps.env, deps.kv))) {
+        const authorization = await resolveGuildAuthorization(deps.supabase, guild.id, deps.env, deps.kv);
+        if (authorization === 'denied') {
           await leaveUnauthorized(guild);
+        } else if (authorization === 'unavailable') {
+          deps.log.warn({ guildId: guild.id }, 'authorization unavailable; deferring guild leave');
         }
       } catch (err) {
         deps.log.error({ err, guildId: guild.id }, 'guild authorization reconciliation failed');
@@ -126,10 +129,25 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): void {
   client.on(Events.GuildCreate, async (guild) => {
     try {
       const permanent = isPermanentGuild(deps.env, guild.id);
-      const allowed = permanent || await isGuildAuthorized(deps.supabase, guild.id, deps.env, deps.kv);
+      const authorization = permanent
+        ? 'allowed'
+        : await resolveGuildAuthorization(deps.supabase, guild.id, deps.env, deps.kv);
+      const allowed = authorization === 'allowed';
       await upsertServer(deps.supabase, guild, allowed);
 
-      if (!allowed) {
+      if (authorization === 'unavailable') {
+        deps.log.warn({ guildId: guild.id, name: guild.name }, 'authorization unavailable; keeping guild for retry');
+        deps.record({
+          action: 'server_lock.pending',
+          level: 'warn',
+          message: `Guild ${guild.name} is pending authorization storage recovery`,
+          guildId: guild.id,
+          meta: { guildName: guild.name, memberCount: guild.memberCount },
+        });
+        return;
+      }
+
+      if (authorization === 'denied') {
         deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild joined pending authorization');
         deps.record({
           action: 'server_lock.rejected',

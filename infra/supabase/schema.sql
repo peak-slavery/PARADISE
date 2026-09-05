@@ -49,8 +49,42 @@ create table if not exists public.internal_request_nonces (
   request_id text primary key check (length(request_id) between 16 and 128),
   created_at timestamptz not null default now()
 );
-create index if not exists internal_request_nonces_created_idx
-  on public.internal_request_nonces (created_at);
+create or replace function public.apply_bot_config_request(
+  p_request_id text,
+  p_guild_id text,
+  p_bot_id text,
+  p_config jsonb
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  inserted_nonce_count integer;
+begin
+  if not exists (select 1 from public.servers where guild_id = p_guild_id and authorized = true) then
+    raise exception 'guild is not authorized';
+  end if;
+
+  insert into public.internal_request_nonces(request_id)
+  values (p_request_id)
+  on conflict (request_id) do nothing;
+  get diagnostics inserted_nonce_count = row_count;
+  if inserted_nonce_count = 0 then
+    return false;
+  end if;
+
+  insert into public.bot_configs(guild_id, bot_id, config, updated_at)
+  values (p_guild_id, p_bot_id, p_config, now())
+  on conflict (guild_id, bot_id) do update
+    set config = excluded.config, updated_at = excluded.updated_at;
+  return true;
+end;
+$$;
+
+revoke all on function public.apply_bot_config_request(text, text, text, jsonb) from public;
+grant execute on function public.apply_bot_config_request(text, text, text, jsonb) to service_role;
 
 create or replace function public.prevent_user_authority_changes()
 returns trigger

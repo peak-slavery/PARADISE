@@ -6,7 +6,7 @@ import { enforceRateLimit } from './rate-limit.js';
 import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
-import { isGuildWhitelisted, isPermanentGuild } from './whitelist.js';
+import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
 import { buildClientOptions, parseGuildAuthorizationButton } from './bot.js';
 
 describe('Discord client options', () => {
@@ -59,7 +59,7 @@ describe('guild whitelist', () => {
     expect(isPermanentGuild({ devGuildId: '123456789012345678', mainGuildId: undefined }, '123456789012345678')).toBe(true);
   });
 
-  it('accepts active full and future temporary rows, but rejects expired rows', async () => {
+  it('accepts active full whitelist rows', async () => {
     const row = { whitelist_type: 'full', expires_at: null };
     const supabase = {
       from: () => ({
@@ -71,6 +71,20 @@ describe('guild whitelist', () => {
       }),
     } as never;
     await expect(isGuildWhitelisted(supabase, '123456789012345678')).resolves.toBe(true);
+  });
+
+  it('preserves datastore outages for reconciliation without widening command access', async () => {
+    const failing = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({ maybeSingle: async () => ({ data: null, error: { code: '500' } }) }),
+          }),
+        }),
+      }),
+    } as never;
+    await expect(resolveGuildAuthorization(failing, '123456789012345678')).resolves.toBe('unavailable');
+    await expect(isGuildWhitelisted(failing, '123456789012345678')).resolves.toBe(false);
   });
 });
 

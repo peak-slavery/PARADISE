@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -42,6 +43,9 @@ export class LazyCommandRunner {
           mod = await import(pathToFileURL(path.join(dir, `${name}${ext}`)).href);
           break outer;
         } catch (err) {
+          if (isModuleNotFound(err) && existsSync(path.join(dir, `${name}${ext}`))) {
+            throw err;
+          }
           if (!isModuleNotFound(err)) throw err;
         }
       }
@@ -90,7 +94,7 @@ export async function loadAllCommandModules(dir: string): Promise<CommandModule[
     try {
       modules.push(await runner.load(name));
     } catch (err) {
-      console.warn(`[commands] skipping ${name}: ${String(err)}`);
+      throw new Error(`Unable to load command module ${name}`, { cause: err });
     }
   }
   return modules;

@@ -92,8 +92,8 @@ export interface CreateBotOptions {
   queue?: QueueOptions;
   /** Commands exempt from the default limiter (read-only lookups). */
   unlimitedCommands?: string[];
-  /** Wire up extra event listeners before login. */
-  setup?: (ctx: { client: Client; services: BotServices; log: Logger; env: Env }) => void | Promise<void>;
+  /** Wire up extra event listeners before login; optionally return shutdown cleanup. */
+  setup?: (ctx: { client: Client; services: BotServices; log: Logger; env: Env }) => void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>;
 }
 
 export interface BotRuntime {
@@ -615,7 +615,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     reportError(err, { botId: env.botId });
   });
 
-  await options.setup?.({ client, services, log, env });
+  const setupCleanup = await options.setup?.({ client, services, log, env });
 
   /* --- Mongo auto-reconnect --------------------------------------------- */
   const reconnect = setInterval(() => {
@@ -640,10 +640,9 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     stopInterlink();
     server.close();
     client.destroy();
-    baseSink.stop();
-    await baseSink.flush();
-    backupSink.stop();
-    await backupSink.flush();
+    if (typeof setupCleanup === 'function') await setupCleanup();
+    await baseSink.stop();
+    await backupSink.stop();
     await mongoHandle?.client.close().catch(() => undefined);
     await secondaryMongoHandle?.client.close().catch(() => undefined);
     log.info('shutdown complete');
