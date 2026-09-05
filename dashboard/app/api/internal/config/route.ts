@@ -199,15 +199,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Guild is not authorized' }, { status: 403 });
   }
 
-  try {
-    if (!await consumeNonce(requestId)) {
-      return NextResponse.json({ error: 'Request already processed' }, { status: 409 });
-    }
-  } catch (error) {
-    console.error('[internal/config] nonce insert failed', { error });
-    return NextResponse.json({ error: 'Configuration write failed' }, { status: 500 });
-  }
-
   const { error } = await supabase.from('bot_configs').upsert(
     {
       guild_id: guildId,
@@ -220,6 +211,15 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     console.error('[internal/config] configuration write failed', { code: error.code });
+    return NextResponse.json({ error: 'Configuration write failed' }, { status: 500 });
+  }
+
+  try {
+    if (!await consumeNonce(requestId)) {
+      return NextResponse.json({ error: 'Request already processed' }, { status: 409 });
+    }
+  } catch (nonceError) {
+    console.error('[internal/config] nonce insert failed', { error: nonceError });
     return NextResponse.json({ error: 'Configuration write failed' }, { status: 500 });
   }
 

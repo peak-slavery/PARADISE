@@ -141,22 +141,32 @@ export async function rotateSecret(input: {
   const metadata = input.metadata ?? {};
   const sealed = sealSecret(input.plaintext, metadata);
   const now = new Date().toISOString();
-  const { error: revokeError } = await client
-    .from('secret_records')
-    .update({ revoked_at: now })
-    .eq('name', input.name)
-    .is('revoked_at', null);
-  if (revokeError) throw revokeError;
-
-  const { data, error } = await client.from('secret_records').insert({
-    name: input.name,
+  const replacement = {
     provider: input.provider,
     label: input.label.trim().slice(0, 160),
     ...sealed,
     metadata,
     rotated_at: now,
     created_by: input.createdBy ?? null,
-  }).select('id,name,provider,label,metadata,created_at,rotated_at,created_by,revoked_at').single();
+  };
+  const { data: current, error: lookupError } = await client
+    .from('secret_records')
+    .select('id')
+    .eq('name', input.name)
+    .is('revoked_at', null)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+
+  const { data, error } = current
+    ? await client.from('secret_records')
+      .update(replacement)
+      .eq('id', current.id)
+      .select('id,name,provider,label,metadata,created_at,rotated_at,created_by,revoked_at')
+      .single()
+    : await client.from('secret_records').insert({
+      name: input.name,
+      ...replacement,
+    }).select('id,name,provider,label,metadata,created_at,rotated_at,created_by,revoked_at').single();
   if (error || !data) throw error ?? new Error('Secret write returned no record');
   cache.delete(input.name);
   return data as SecretMetadata;
