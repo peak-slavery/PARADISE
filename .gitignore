@@ -32,3 +32,14 @@ Thumbs.db
 # limits). Not part of the project — never commit these.
 big_body.json
 ok_body.json
+
+# Local deployment credentials. Never commit or package these.
+temp cred.txt
+.local/credentials/
+*.credential
+*.credentials
+*.secret
+*.secrets
+*service-account*.json
+*.pem
+*.p12

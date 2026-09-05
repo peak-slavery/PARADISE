@@ -25,6 +25,8 @@ The dashboard host needs its own Supabase auth/RLS values and vault key material
 NEXT_PUBLIC_SUPABASE_URL=<dashboard Supabase project URL>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<dashboard Supabase anon key>
 SUPABASE_SERVICE_ROLE_KEY=<dashboard Supabase service-role key>
+MONGODB_URI=<TLS MongoDB URI for dashboard guild data>
+MONGODB_DB=eiflow
 SECRET_VAULT_MASTER_KEY=<32 random bytes, base64>
 SECRET_VAULT_SALT=<16 random bytes, base64>
 HMAC_SECRETS_JSON=<JSON map of bot ids to unique HMAC secrets>
@@ -33,9 +35,10 @@ MAIN_GUILD_ID=<fixed main guild id>
 DEV_AUTH_CHANNEL_ID=<private review channel id>
 ```
 
-Do not place MongoDB, Redis, Firebase, Cloudflare, or runtime Supabase
-credentials in Render/Vercel bot environment variables. The bots fetch their
-allowlisted records through the signed internal vault endpoint.
+Do not place Redis, Firebase, Cloudflare, or runtime Supabase credentials in
+Render/Vercel bot environment variables. The dashboard itself requires its
+server-only MONGODB_URI/MONGODB_DB values for guild-scoped data; bots fetch
+allowlisted runtime records through the signed internal vault endpoint.
 
 Generate vault key material locally with a cryptographically secure generator:
 
@@ -109,8 +112,9 @@ corresponding Render service; they are never requested through the vault.
 ### Render
 
 Deploy each bot as its own Render web service from `render.yaml`. The Blueprint
-uses the `free` plan (0.1 CPU, 512 MB RAM per service), `rootDir: .`, `npm ci`,
-the matching workspace start command, `PORT=3000`, and `/health`. Render must
+uses the `free` plan (0.1 CPU, 512 MB RAM per service), `rootDir: .`,
+`npm ci --include=dev`, the matching workspace command-registration and start
+commands, Render's injected `PORT`, and `/health`. Render must
 be given every `sync: false` value for each service, including its unique
 `DISCORD_TOKEN`, `HMAC_SECRET`, `DASHBOARD_URL`, and guild routing values.
 Provider keys should be provisioned as the provider records above rather than

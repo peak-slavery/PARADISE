@@ -4,7 +4,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-niko-robin
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -39,16 +39,10 @@ services:
         value: eiflow
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: BRAVE_SEARCH_API_KEY
-        sync: false
-      - key: SERPAPI_KEY
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -57,7 +51,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-boahancock
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -96,8 +90,6 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -106,7 +98,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-nami
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -145,8 +137,6 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -155,7 +145,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-cyrene
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -190,14 +180,6 @@ services:
         value: eiflow
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      - key: MISTRAL_API_KEY
-        sync: false
       - key: CYRENE_MODEL
         value: openai/gpt-oss-20b
       - key: ASSISTANT_MODEL
@@ -206,8 +188,6 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -216,7 +196,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-zoro
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -251,8 +231,6 @@ services:
         value: eiflow
       - key: MONGODB_SECONDARY_DB
         value: eipointsecurity
-      - key: GROQ_AUTOMOD_API_KEY
-        sync: false
       - key: AUTOMOD_SLM_MODEL
         value: llama-3.1-8b-instant
       - key: AUTOMOD_SLM_THRESHOLD
@@ -261,8 +239,6 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -271,7 +247,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-shanks
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -310,8 +286,6 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -320,7 +294,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-luffy
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -359,8 +333,6 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
 
@@ -369,7 +341,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
     startCommand: npm run start -w @eiflow/bot-sanji
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -408,7 +380,5 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: '3000'
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
