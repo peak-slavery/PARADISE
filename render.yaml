@@ -4,7 +4,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-niko-robin
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -51,7 +51,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-boahancock
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -98,7 +98,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-nami
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -145,7 +145,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-cyrene
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -196,7 +196,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-zoro
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -247,7 +247,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-shanks
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -294,7 +294,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-luffy
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -341,7 +341,7 @@ services:
     runtime: node
     rootDir: .
     plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/$BOT_ID
+    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
     startCommand: npm run start -w @eiflow/bot-sanji
     healthCheckPath: /health
     autoDeployTrigger: off
