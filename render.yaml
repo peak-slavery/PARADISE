@@ -15,6 +15,11 @@
 # Render free-tier note: persistent gateway bots will be throttled within
 # hours. Run a paid instance type in production, or move the bot fleet to a
 # host that does not idle-free (Railway, Fly.io, a small VM).
+#
+# Memory: free services get 512MB RAM each. NODE_OPTIONS caps the V8
+# old-space heap at 384MB so a memory leak fails fast into Render's restart
+# loop instead of silently growing into the platform OOM killer. Normal
+# steady-state RSS is ~60-165MB, leaving ample headroom for non-heap memory.
 
 # --- Reusable blocks ---------------------------------------------------------
 
@@ -26,6 +31,8 @@ x-bot-common: &bot-common
   autoDeployTrigger: checksPass
   buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
   envVars:
+    - key: NODE_OPTIONS
+      value: --max-old-space-size=384
     - key: BOT_VERSION
       value: '1.0.0'
     - key: OWNER_IDS

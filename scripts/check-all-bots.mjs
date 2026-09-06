@@ -31,6 +31,9 @@ const BOTS = [
 ];
 
 let down = 0;
+let overBudget = 0;
+let totalRam = 0;
+const RAM_BUDGET_MB = 512; // Render free plan per-service limit
 for (const [id, header, port] of BOTS) {
   const tok = section(`^${header}\\b`).match(/- HEALTH_TOKEN=(\S+)/)?.[1];
   let line = `${id}: `;
@@ -43,13 +46,19 @@ for (const [id, header, port] of BOTS) {
     const db = j.db_connections ?? {};
     line += `status=${j.status} mongo=${db.mongo} redis=${db.redis} supabase=${db.supabase} writes_1h=${j.db_write_count_1h} ram=${j.ram_mb}MB`;
     if (j.status === 'degraded') line += '  (supabase schema pending — expected)';
+    if (typeof j.ram_mb === 'number') totalRam += j.ram_mb;
+    if (typeof j.ram_mb === 'number' && j.ram_mb > RAM_BUDGET_MB) {
+      line += `  ⚠ OVER ${RAM_BUDGET_MB}MB RENDER BUDGET`;
+      overBudget += 1;
+    }
   } catch (e) {
     line += `DOWN — ${e.message}`;
     down += 1;
   }
   console.log(line);
 }
-if (down) {
-  console.log(`\n${down} bot(s) unreachable`);
+console.log(`stack total RSS: ${Math.round(totalRam)}MB (budget: 8 × ${RAM_BUDGET_MB}MB on Render, one service each)`);
+if (down || overBudget) {
+  console.log(`\n${down} unreachable, ${overBudget} over RAM budget`);
   process.exit(1);
 }

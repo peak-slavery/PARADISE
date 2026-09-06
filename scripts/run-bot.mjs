@@ -84,6 +84,9 @@ function buildEnv(botId, port) {
     LOG_LEVEL: 'info',
     PORT: String(port),
     REDIS_DAILY_COMMAND_BUDGET: '8000',
+    // Match Render's 512MB free-plan contract: cap the V8 heap so a leak
+    // crashes into a visible restart instead of eating the whole machine.
+    NODE_OPTIONS: '--max-old-space-size=384',
   };
   const missing = Object.entries(own).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) throw new Error(`empty required env values: ${missing.join(', ')}`);
