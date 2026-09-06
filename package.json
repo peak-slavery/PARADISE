@@ -23,6 +23,7 @@
     "lint": "eslint . --max-warnings 0",
     "test": "npm run test --workspaces --if-present",
     "audit": "npm audit --audit-level=high",
+    "check:deploy": "node scripts/check-deploy.mjs",
     "archive:retention": "node scripts/archive-retention.mjs",
     "start:moderation": "npm run dev -w @eiflow/bot-shanks",
     "start:logging": "npm run dev -w @eiflow/bot-sanji",

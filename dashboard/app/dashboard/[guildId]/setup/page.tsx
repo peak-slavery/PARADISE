@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { getSetupReadiness } from '@/lib/setup';
 import { getBotConfig } from '@/lib/data/config';
+import { requireGuildAccess } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ const GROUP_LABELS: Record<string, string> = {
 
 export default async function SetupPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
+  await requireGuildAccess(guildId);
   const readiness = getSetupReadiness();
   const zoro = await getBotConfig(guildId, 'zoro');
   const zoroEnabled = Boolean(zoro.values.enabled);

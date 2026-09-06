@@ -185,6 +185,7 @@ export async function connectMongo(env: Env, log: Logger): Promise<MongoHandle |
     }
   }
 
+  await client.close().catch(() => undefined);
   log.error({ err: lastErr }, 'mongodb unavailable — running in degraded mode');
   return null;
 }

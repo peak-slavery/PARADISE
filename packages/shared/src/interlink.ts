@@ -67,17 +67,28 @@ export class BotInterlink {
    */
   startPolling(handler: InterlinkHandler, intervalMs = 2_000): () => void {
     let stopped = false;
+    let polling = false;
     let lastEventId = '';
 
     const poll = async (): Promise<void> => {
-      if (stopped) return;
+      if (stopped || polling) return;
+      polling = true;
       try {
-        const event = await this.kv.get<InterlinkEvent>(keys.interlink(channelName(this.sourceBot)));
-        if (!event || event.id === lastEventId || event.targetBot !== this.sourceBot) return;
-        lastEventId = event.id;
+        const events = await Promise.all([
+          this.kv.get<InterlinkEvent>(keys.interlink(channelName(this.sourceBot))),
+          this.kv.get<InterlinkEvent>(keys.interlink(channelName('broadcast'))),
+        ]);
+        const event = events
+          .filter((candidate): candidate is InterlinkEvent => Boolean(candidate))
+          .filter((candidate) => candidate.id !== lastEventId)
+          .find((candidate) => candidate.targetBot === this.sourceBot || !candidate.targetBot);
+        if (!event) return;
         await handler(event);
+        lastEventId = event.id;
       } catch {
         // A transient Redis or handler failure must not take down the gateway.
+      } finally {
+        polling = false;
       }
     };
 

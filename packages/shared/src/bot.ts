@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   Client,
+  DiscordAPIError,
   EmbedBuilder,
   Events,
   type APIEmbedField,
@@ -37,7 +38,7 @@ import { isBotOperational } from './control.js';
 import type { BotControlState, BotServices, CommandContext } from './types.js';
 import { BotInterlink } from './interlink.js';
 import type { InterlinkEvent } from './interlink.js';
-import { invalidateGuildWhitelistCache, writeGuildWhitelist } from './whitelist.js';
+import { writeGuildWhitelist } from './whitelist.js';
 import { hydrateRuntimeSecrets } from './vault-client.js';
 
 const MASTER_DISCORD_ID = '1479589523426902208';
@@ -58,7 +59,7 @@ export function parseGuildAuthorizationButton(customId: string): {
   return { decision: decision as GuildAuthorizationDecision, guildId };
 }
 
-function redactAuditMeta(value: Record<string, unknown>): Record<string, unknown> {
+export function redactAuditMeta(value: Record<string, unknown>): Record<string, unknown> {
   const walk = (input: unknown, depth: number): unknown => {
     if (depth > 4) return '[truncated]';
     if (typeof input === 'string') {
@@ -315,7 +316,16 @@ export async function handleDashboardEmbed(
   const channelId = boundedString(event.payload.channelId, 32);
   if (!channelId || !/^\d{17,20}$/.test(channelId)) return;
 
-  const channel = await client.channels.fetch(channelId).catch(() => null);
+  let channel;
+  try {
+    channel = await client.channels.fetch(channelId);
+  } catch (error) {
+    if (error instanceof DiscordAPIError && error.code === 10003) {
+      log.warn({ guildId: event.guildId, channelId }, 'dashboard embed dropped because channel no longer exists');
+      return;
+    }
+    throw error;
+  }
   if (!channel || channel.isDMBased() || !('guild' in channel) || channel.guild?.id !== event.guildId || !('send' in channel)) {
     log.warn({ guildId: event.guildId, channelId }, 'dashboard embed channel rejected');
     return;
@@ -411,7 +421,10 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     intervalMs: 30_000,
     maxBatch: 200,
     onError: (err, dropped) => {
-      log.error({ err, dropped }, 'log batch write failed');
+      const failedHandle = mongoHandle;
+      mongoHandle = null;
+      void failedHandle?.client.close().catch(() => undefined);
+      log.error({ err, dropped }, 'log batch write failed; reconnecting primary Mongo');
       reportError(err, { botId: env.botId });
     },
   });
@@ -432,8 +445,9 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   const logs: LogSink = {
     push(doc) {
       writeCount += 1;
-      baseSink.push(doc);
-      backupSink.push({ ...doc, meta: redactAuditMeta(doc.meta) });
+      const safeDoc = { ...doc, meta: redactAuditMeta(doc.meta) };
+      baseSink.push(safeDoc);
+      backupSink.push(safeDoc);
     },
     flush: () => baseSink.flush(),
     stop: () => baseSink.stop(),
@@ -514,7 +528,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   const unlimited = new Set(options.unlimitedCommands ?? []);
 
   /* --- server lock ------------------------------------------------------ */
-  attachServerLock(client, {
+  const stopServerLock = attachServerLock(client, {
     env,
     log,
     supabase,
@@ -562,7 +576,6 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         const type = decision === 'deny' ? 'unauthorised' : decision;
         const expiresAt = decision === 'temp' ? new Date(Date.now() + 24 * 60 * 60_000).toISOString() : null;
         await writeGuildWhitelist(supabase, { guildId, type: type as 'full' | 'temp' | 'unauthorised', expiresAt, kv });
-        await invalidateGuildWhitelistCache(kv, guildId);
         await interaction.update({ components: [], content: `Authorization decision: ${decision === 'deny' ? 'denied' : decision === 'temp' ? 'temporary 24h' : 'full access'}` });
       } catch (error) {
         log.error({ err: error, guildId: authorization.guildId }, 'guild authorization decision failed');
@@ -617,8 +630,17 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     }
   });
 
+  let heartbeatTimer: NodeJS.Timeout | null = null;
   client.on(Events.ClientReady, (ready) => {
-    void interlink.heartbeat(ready.guilds.cache.size);
+    const refreshHeartbeat = (): void => {
+      void interlink.heartbeat(ready.guilds.cache.size).catch((err) => {
+        log.warn({ err }, 'interlink heartbeat failed');
+      });
+    };
+    refreshHeartbeat();
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(refreshHeartbeat, 60_000);
+    heartbeatTimer.unref?.();
     log.info(
       { guilds: ready.guilds.cache.size, user: ready.user.tag, commands: options.commandsDir },
       'bot ready',
@@ -630,52 +652,85 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     reportError(err, { botId: env.botId });
   });
 
-  const setupCleanup = await options.setup?.({ client, services, log, env });
+  let setupCleanup: (() => void | Promise<void>) | undefined;
 
   /* --- Mongo auto-reconnect --------------------------------------------- */
+  let shuttingDown = false;
+  const reconnecting = new Set<Promise<void>>();
+  const launchReconnect = (
+    connect: () => Promise<MongoHandle | null>,
+    assign: (handle: MongoHandle) => void,
+    label: string,
+  ): void => {
+    const pending = connect()
+      .then(async (handle) => {
+        if (!handle) return;
+        if (shuttingDown) {
+          await handle.client.close().catch((err) => log.error({ err }, `${label} Mongo shutdown failed`));
+          return;
+        }
+        assign(handle);
+        log.info(`${label} mongodb reconnected`);
+      })
+      .catch((err) => log.error({ err }, `${label} mongodb reconnect failed`));
+    reconnecting.add(pending);
+    void pending.finally(() => reconnecting.delete(pending));
+  };
   const reconnect = setInterval(() => {
-    if (!mongoHandle) {
-      void connectMongo(env, log).then((handle) => {
-        if (handle) {
-          mongoHandle = handle;
-          log.info('mongodb reconnected');
-        }
-      });
-    }
-    if (!secondaryMongoHandle) {
-      void connectSecondaryMongo(env, log).then((handle) => {
-        if (handle) {
-          secondaryMongoHandle = handle;
-          log.info('secondary mongodb reconnected');
-        }
-      });
-    }
+    if (shuttingDown) return;
+    if (!mongoHandle) launchReconnect(() => connectMongo(env, log), (handle) => { mongoHandle = handle; }, 'primary');
+    if (!secondaryMongoHandle) launchReconnect(() => connectSecondaryMongo(env, log), (handle) => { secondaryMongoHandle = handle; }, 'secondary');
   }, 60_000);
   reconnect.unref?.();
 
   /* --- graceful shutdown ------------------------------------------------- */
-  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info({ signal }, 'shutting down');
 
     clearInterval(reconnect);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
     stopInterlink();
-    server.close();
+    stopServerLock();
+    await new Promise<void>((resolve) => {
+      server.close((err) => {
+        if (err) log.error({ err }, 'health server shutdown failed');
+        resolve();
+      });
+    });
     client.destroy();
-    if (typeof setupCleanup === 'function') await setupCleanup();
-    await baseSink.stop();
-    await backupSink.stop();
-    await mongoHandle?.client.close().catch(() => undefined);
-    await secondaryMongoHandle?.client.close().catch(() => undefined);
+    await Promise.all([...reconnecting]);
+    let cleanupError: unknown;
+    try {
+      if (typeof setupCleanup === 'function') await setupCleanup();
+    } catch (err) {
+      cleanupError = err;
+      log.error({ err }, 'bot-specific shutdown cleanup failed');
+    } finally {
+      await baseSink.stop().catch((err) => log.error({ err }, 'base log sink shutdown failed'));
+      await backupSink.stop().catch((err) => log.error({ err }, 'backup log sink shutdown failed'));
+      await mongoHandle?.client.close().catch((err) => log.error({ err }, 'primary Mongo shutdown failed'));
+      await secondaryMongoHandle?.client.close().catch((err) => log.error({ err }, 'secondary Mongo shutdown failed'));
+    }
     log.info('shutdown complete');
+    if (cleanupError) throw cleanupError;
   };
 
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
 
-  await client.login(env.discordToken);
+  try {
+    const cleanup = await options.setup?.({ client, services, log, env });
+    setupCleanup = typeof cleanup === 'function' ? cleanup : undefined;
+    await client.login(env.discordToken);
+  } catch (err) {
+    // Bootstrap failure: drive the normal teardown so the log buffers holding
+    // the failure diagnostics are flushed before the process exits.
+    await shutdown('BOOTSTRAP_FAIL');
+    throw err;
+  }
 
   return { client, env, log, services, shutdown };
 }

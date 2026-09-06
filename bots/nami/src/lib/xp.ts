@@ -67,7 +67,7 @@ export class XpTracker {
   private readonly maxBuffered: number;
 
   private timer: NodeJS.Timeout | null = null;
-  private flushing = false;
+  private flushing: Promise<void> | null = null;
   private stopped = false;
 
   constructor(private readonly opts: XpTrackerOptions) {
@@ -117,10 +117,17 @@ export class XpTracker {
     this.timer.unref?.();
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+
+    if (this.flushing) await this.flushing;
+    while (this.buffer.size > 0) {
+      const pending = this.buffer.size;
+      await this.flushBatch();
+      if (this.buffer.size === pending) break;
+    }
   }
 
   /**
@@ -129,14 +136,18 @@ export class XpTracker {
    * queued and concurrent `add()` calls can never be lost or double-counted.
    */
   async flush(): Promise<void> {
-    if (this.flushing || this.stopped || this.buffer.size === 0) return;
+    if (this.stopped || this.buffer.size === 0) return;
+    await this.flushBatch();
+  }
+
+  private async flushBatch(): Promise<void> {
+    if (this.flushing || this.buffer.size === 0) return;
 
     const collection = this.opts.getCollection();
     // No collection yet (degraded mode): keep the buffer and retry next tick.
     if (!collection) return;
 
-    this.flushing = true;
-    try {
+    const work = (async () => {
       const batch: Array<[string, XpDelta]> = [];
       for (const [key, delta] of this.buffer) {
         if (batch.length >= this.maxBatch) break;
@@ -144,22 +155,29 @@ export class XpTracker {
       }
       if (batch.length === 0) return;
 
-      await this.writeBatch(collection, batch);
+      try {
+        await this.writeBatch(collection, batch);
 
-      for (const [key, written] of batch) {
-        const current = this.buffer.get(key);
-        if (!current) continue;
-        current.xp -= written.xp;
-        current.messages -= written.messages;
-        current.voiceSeconds -= written.voiceSeconds;
-        if (current.xp <= 0 && current.messages <= 0 && current.voiceSeconds <= 0) {
-          this.buffer.delete(key);
+        for (const [key, written] of batch) {
+          const current = this.buffer.get(key);
+          if (!current) continue;
+          current.xp -= written.xp;
+          current.messages -= written.messages;
+          current.voiceSeconds -= written.voiceSeconds;
+          if (current.xp <= 0 && current.messages <= 0 && current.voiceSeconds <= 0) {
+            this.buffer.delete(key);
+          }
         }
+      } catch (err) {
+        this.opts.log.error({ err, pending: this.buffer.size }, 'xp flush failed — deltas retained');
       }
-    } catch (err) {
-      this.opts.log.error({ err, pending: this.buffer.size }, 'xp flush failed — deltas retained');
+    })();
+
+    this.flushing = work;
+    try {
+      await work;
     } finally {
-      this.flushing = false;
+      if (this.flushing === work) this.flushing = null;
     }
   }
 

@@ -43,6 +43,46 @@ alter table public.users add column if not exists is_master boolean not null def
 
 comment on table public.users is 'Dashboard identities. discord_id mirrors the Discord OAuth subject.';
 
+-- Supabase Auth creates the identity row before dashboard authorization runs. The
+-- trigger provisions the RLS-visible profile atomically; service-role SQL remains
+-- available for repairing identities whose provider metadata is incomplete.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  provider_id text;
+begin
+  provider_id := coalesce(
+    nullif(new.raw_user_meta_data ->> 'provider_id', ''),
+    nullif(new.raw_user_meta_data ->> 'sub', ''),
+    'auth:' || new.id::text
+  );
+
+  insert into public.users (id, discord_id, username, avatar_url)
+  values (
+    new.id,
+    provider_id,
+    coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name'),
+    new.raw_user_meta_data ->> 'avatar_url'
+  )
+  on conflict (id) do update
+    set username = excluded.username,
+        avatar_url = excluded.avatar_url,
+        updated_at = now();
+  return new;
+end;
+$$;
+
+revoke all on function public.handle_new_user() from public;
+grant execute on function public.handle_new_user() to service_role;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
+
 -- One-time IDs for privileged bot-to-dashboard requests. The primary key makes
 -- replay rejection atomic across serverless instances.
 create table if not exists public.internal_request_nonces (
@@ -420,6 +460,12 @@ as $$
   );
 $$;
 
+-- SECURITY DEFINER functions default to PUBLIC EXECUTE, which would let
+-- `anon` and any future role probe ownership. Restrict to the roles the
+-- dashboard actually uses. Idempotent; re-runs are no-ops.
+revoke all on function public.owns_guild(text) from public;
+grant execute on function public.owns_guild(text) to authenticated, service_role;
+
 -- Master access is intentionally a separate security-definer predicate. It
 -- avoids recursive RLS policies and allows a DB flag plus the immutable
 -- operator identity to be enforced in one place.
@@ -437,6 +483,10 @@ as $$
       and (u.is_master = true or u.discord_id = '1479589523426902208')
   );
 $$;
+
+-- Same lockdown as `owns_guild` above.
+revoke all on function public.is_master_user() from public;
+grant execute on function public.is_master_user() to authenticated, service_role;
 
 create or replace function public.can_access_guild(p_guild_id text)
 returns boolean

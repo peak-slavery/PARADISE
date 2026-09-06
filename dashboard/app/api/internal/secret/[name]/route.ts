@@ -88,12 +88,16 @@ export async function POST(
 
   const body = await boundedBody(request);
   if (body === null) return NextResponse.json({ error: 'Request body too large' }, { status: 413 });
-  let payload: { request_id?: unknown; bot_id?: unknown };
+  let parsed: unknown;
   try {
-    payload = JSON.parse(body) as typeof payload;
+    parsed = JSON.parse(body);
   } catch {
     return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 });
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return NextResponse.json({ error: 'Body must be a JSON object' }, { status: 400 });
+  }
+  const payload = parsed as { request_id?: unknown; bot_id?: unknown };
   if (payload.bot_id !== botId || typeof payload.request_id !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(payload.request_id)) {
     return NextResponse.json({ error: 'Invalid internal payload' }, { status: 400 });
   }

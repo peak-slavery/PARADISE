@@ -21,10 +21,10 @@
     "discord.js": "^14.15.3",
     "mongodb": "^6.9.0",
     "pino": "^9.4.0",
-    "vitest": "^3.2.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/node": "^22.7.5"
+    "@types/node": "^22.7.5",
+    "vitest": "^3.2.7"
   }
 }

@@ -35,22 +35,33 @@ function errorName(error) {
   return error instanceof Error ? error.name : 'UnknownError';
 }
 
-const supabaseUrl = required('SUPABASE_URL');
-const serviceRoleKey = required('SUPABASE_SERVICE_ROLE_KEY');
-const mongoUri = required('MONGODB_URI');
-const mongoDb = process.env.MONGODB_DB?.trim() || 'eiflow';
-const retentionDays = positiveInt('RETENTION_DAYS', 90, 3_650);
-const batchSize = positiveInt('RETENTION_BATCH_SIZE', 250, 1_000);
-const maxRows = positiveInt('RETENTION_MAX_ROWS', 10_000, 100_000);
-const dryRun = isTrue('RETENTION_DRY_RUN');
+const config = (() => {
+  try {
+    const supabaseUrl = required('SUPABASE_URL');
+    const serviceRoleKey = required('SUPABASE_SERVICE_ROLE_KEY');
+    const mongoUri = required('MONGODB_URI');
+    if (!/^https:\/\//i.test(supabaseUrl)) throw new Error('SUPABASE_URL must use https');
+    return {
+      supabaseUrl,
+      serviceRoleKey,
+      mongoUri,
+      mongoDb: process.env.MONGODB_DB?.trim() || 'eiflow',
+      retentionDays: positiveInt('RETENTION_DAYS', 90, 3_650),
+      batchSize: positiveInt('RETENTION_BATCH_SIZE', 250, 1_000),
+      maxRows: positiveInt('RETENTION_MAX_ROWS', 10_000, 100_000),
+      dryRun: isTrue('RETENTION_DRY_RUN'),
+    };
+  } catch (error) {
+    console.error(`retention config invalid (${error instanceof Error ? error.message : 'unknown'})`);
+    process.exit(1);
+  }
+})();
 
-if (!/^https:\/\//i.test(supabaseUrl)) throw new Error('SUPABASE_URL must use https');
-
-const cutoff = new Date(Date.now() - retentionDays * 86_400_000).toISOString();
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
+const cutoff = new Date(Date.now() - config.retentionDays * 86_400_000).toISOString();
+const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const mongo = new MongoClient(mongoUri, {
+const mongo = new MongoClient(config.mongoUri, {
   maxPoolSize: 2,
   minPoolSize: 0,
   serverSelectionTimeoutMS: 10_000,
@@ -58,26 +69,35 @@ const mongo = new MongoClient(mongoUri, {
 });
 
 async function archiveTable(table) {
-  const collection = mongo.db(mongoDb).collection(table.collection);
+  const collection = mongo.db(config.mongoDb).collection(table.collection);
   await collection.createIndex({ archived_at: 1 }, { name: 'archive_ttl', expireAfterSeconds: 31_536_000 });
   await collection.createIndex({ source_id: 1 }, { name: 'archive_source_id' });
 
+  /** Keyset cursor: rows strictly after (created_at, id). */
+  const afterCursor = (query, cursor) =>
+    query.or(`created_at.gt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.gt.${cursor.id})`);
+
   let archived = 0;
+  let cursor = null;
   for (;;) {
     const remaining = maxRows - archived;
     const pageSize = Math.min(batchSize, remaining);
-    const { data: rows, error: readError } = await supabase
+    let query = supabase
       .from(table.name)
       .select('*')
       .lt('created_at', cutoff)
       .order('created_at', { ascending: true })
       .order('id', { ascending: true })
       .limit(pageSize);
+    if (cursor) query = afterCursor(query, cursor);
+    const { data: rows, error: readError } = await query;
 
     if (readError) throw new Error(`${table.name} read failed (${errorName(readError)})`);
     if (!rows?.length) break;
+    const last = rows[rows.length - 1];
+    cursor = { createdAt: last.created_at, id: last.id };
 
-    if (dryRun) {
+    if (config.dryRun) {
       archived += rows.length;
     } else {
       const now = new Date();
@@ -101,8 +121,17 @@ async function archiveTable(table) {
       );
 
       const ids = rows.map((row) => row.id);
-      const verified = await collection.countDocuments({ _id: { $in: ids.map((id) => `${table.name}:${id}`) } });
-      if (verified !== ids.length) throw new Error(`${table.name} archive verification failed`);
+      const archivedRows = await collection
+        .find({ _id: { $in: ids.map((id) => `${table.name}:${id}`) } }, { projection: { _id: 1, row: 1 } })
+        .toArray();
+      const archivedById = new Map(archivedRows.map((doc) => [doc._id, doc.row]));
+      const mismatched = rows.some((row) => {
+        const stored = archivedById.get(`${table.name}:${row.id}`);
+        return JSON.stringify(stored) !== JSON.stringify(row);
+      });
+      if (archivedRows.length !== rows.length || mismatched) {
+        throw new Error(`${table.name} archive verification failed`);
+      }
 
       const { error: deleteError } = await supabase
         .from(table.name)
@@ -124,11 +153,13 @@ async function archiveTable(table) {
 
     if (rows.length < pageSize) break;
     if (archived >= maxRows) {
-      const { data: more, error: probeError } = await supabase
+      let probe = supabase
         .from(table.name)
         .select('id')
         .lt('created_at', cutoff)
         .limit(1);
+      if (cursor) probe = afterCursor(probe, cursor);
+      const { data: more, error: probeError } = await probe;
       if (probeError) throw new Error(`${table.name} limit probe failed (${errorName(probeError)})`);
       if (more?.length) throw new Error(`${table.name} exceeded RETENTION_MAX_ROWS; rerun after review`);
       break;
@@ -144,7 +175,7 @@ try {
   for (const table of TABLES) {
     totals.push(`${table.name}=${await archiveTable(table)}`);
   }
-  console.log(`${dryRun ? 'retention dry run' : 'retention complete'}: ${totals.join(', ')}; cutoff=${cutoff}`);
+  console.log(`${config.dryRun ? 'retention dry run' : 'retention complete'}: ${totals.join(', ')}; cutoff=${cutoff}`);
 } catch (error) {
   console.error(`retention failed (${errorName(error)})`);
   process.exitCode = 1;

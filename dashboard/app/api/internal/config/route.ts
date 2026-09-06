@@ -113,12 +113,16 @@ export async function POST(request: NextRequest) {
   const rawBody = await readBoundedBody(request);
   if (rawBody === null) return NextResponse.json({ error: 'Request body too large' }, { status: 413 });
 
-  let payload: { guild_id?: unknown; bot_id?: unknown; config?: unknown; request_id?: unknown };
+  let parsed: unknown;
   try {
-    payload = JSON.parse(rawBody) as typeof payload;
+    parsed = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 });
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return NextResponse.json({ error: 'Body must be a JSON object' }, { status: 400 });
+  }
+  const payload = parsed as { guild_id?: unknown; bot_id?: unknown; config?: unknown; request_id?: unknown };
 
   const guildId = typeof payload.guild_id === 'string' ? payload.guild_id : '';
   const botId = typeof payload.bot_id === 'string' ? payload.bot_id : '';

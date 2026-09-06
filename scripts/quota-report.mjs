@@ -68,6 +68,17 @@ for (const r of results) {
   }
 
   const d = r.data;
+  if (
+    typeof d.bot_id !== 'string' ||
+    typeof d.version !== 'string' ||
+    typeof d.redis_commands_today !== 'number' ||
+    typeof d.db_write_count_1h !== 'number' ||
+    !d.db_connections || typeof d.db_connections !== 'object'
+  ) {
+    alerts += 1;
+    lines.push(`**OFFLINE** \`${r.url}\` — authenticated health payload is incomplete`);
+    continue;
+  }
   const redisPct = budget > 0 ? (d.redis_commands_today / budget) * 100 : 0;
   const down = Object.entries(d.db_connections ?? {})
     .filter(([, v]) => v === false)
@@ -122,3 +133,5 @@ if (webhook) {
 } else {
   console.log(summary);
 }
+
+if (alerts > 0 && process.exitCode === undefined) process.exitCode = 2;

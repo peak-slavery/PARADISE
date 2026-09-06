@@ -45,6 +45,7 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
   let buffer: T[] = [];
   let timer: NodeJS.Timeout | null = null;
   let flushing: Promise<void> | null = null;
+  let stopping = false;
   let flushed = 0;
   let failed = 0;
 
@@ -52,10 +53,7 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
     if (flushing) return flushing;
     if (buffer.length === 0) return;
     const collection = opts.getCollection();
-    if (!collection) {
-      buffer = [];
-      return;
-    }
+    if (!collection) return;
 
     const batch = buffer;
     buffer = [];
@@ -68,6 +66,7 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
         }
         flushed += batch.length;
       } catch (err) {
+        buffer = [...batch, ...buffer];
         failed += batch.length;
         opts.onError?.(err, batch.length);
       } finally {
@@ -84,14 +83,17 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
 
   return {
     push(doc) {
+      if (stopping) return;
       buffer.push(doc);
       if (buffer.length >= maxBatch) void flush();
     },
     flush,
     async stop() {
+      stopping = true;
       if (timer) clearInterval(timer);
       timer = null;
       await flush();
+      if (buffer.length > 0) await flush();
     },
     stats: () => ({ buffered: buffer.length, flushed, failed }),
   };

@@ -139,6 +139,10 @@ await createBot({
     /** guildId:userId -> epoch ms when the current session started. */
     const sessions = new Map<string, number>();
     const sessionKey = (guildId: string, userId: string) => `${guildId}:${userId}`;
+    const sessionKeyParts = (key: string) => {
+      const separator = key.indexOf(':');
+      return separator > 0 ? { guildId: key.slice(0, separator), userId: key.slice(separator + 1) } : null;
+    };
 
     const endSession = (guildId: string, userId: string, bot: boolean): void => {
       const key = sessionKey(guildId, userId);
@@ -179,8 +183,11 @@ await createBot({
 
     return async () => {
       clearInterval(refresher);
-      await tracker.flush();
-      tracker.stop();
+      for (const key of [...sessions.keys()]) {
+        const parts = sessionKeyParts(key);
+        if (parts) endSession(parts.guildId, parts.userId, false);
+      }
+      await tracker.stop();
     };
   },
 });

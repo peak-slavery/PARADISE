@@ -95,7 +95,7 @@ async function postAuthorizationRequest(
  * whitelist approval remains useful for a later invite and is never a reason
  * to keep an unapproved guild connected.
  */
-export function attachServerLock(client: Client, deps: ServerLockDeps): void {
+export function attachServerLock(client: Client, deps: ServerLockDeps): () => void {
   const leaveUnauthorized = async (guild: { id: string; name: string; leave(): Promise<unknown> }): Promise<void> => {
     deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild is not authorized; leaving');
     await guild.leave();
@@ -120,9 +120,12 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): void {
     }
   };
 
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let stopped = false;
   client.once(Events.ClientReady, () => {
+    if (stopped) return;
     void reconcile();
-    const timer = setInterval(() => void reconcile(), 5 * 60_000);
+    timer = setInterval(() => void reconcile(), 5 * 60_000);
     timer.unref?.();
   });
 
@@ -187,4 +190,12 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): void {
       guildId: guild.id,
     });
   });
+
+  return () => {
+    stopped = true;
+    if (timer) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+  };
 }

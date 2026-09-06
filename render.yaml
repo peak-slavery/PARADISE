@@ -1,384 +1,185 @@
+# Render blueprint for the Ei Flow bot network.
+#
+# Architecture:
+#   - The dashboard (Vercel) is the only host that ever holds vault-managed
+#     secrets (MONGODB_URI, SUPABASE_*, UPSTASH_*, plus per-bot API keys).
+#   - Each bot fetches its runtime secrets from the dashboard over an HMAC-
+#     signed POST to /api/internal/secret/{name} on first boot and caches
+#     them for 5 minutes (see packages/shared/src/vault-client.ts).
+#   - The bot services below only need bootstrap-level credentials: the
+#     Discord token, the bot id, the HMAC secret shared with the dashboard,
+#     and the dashboard URL so the vault can be reached.
+#   - Vault-managed secrets MUST NOT be added here. The `secret:` helper
+#     rejects them at deploy time.
+#
+# Render free-tier note: persistent gateway bots will be throttled within
+# hours. Run a paid instance type in production, or move the bot fleet to a
+# host that does not idle-free (Railway, Fly.io, a small VM).
+
+# --- Reusable blocks ---------------------------------------------------------
+
+x-bot-common: &bot-common
+  runtime: node
+  plan: free
+  rootDir: .
+  healthCheckPath: /health
+  autoDeployTrigger: checksPass
+  buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  envVars:
+    - key: BOT_VERSION
+      value: '1.0.0'
+    - key: OWNER_IDS
+      value: '1479589523426902208'
+    - key: MONGODB_DB
+      value: eiflow
+    - key: MONGODB_SECONDARY_DB
+      value: eipointsecurity
+    - key: LOG_LEVEL
+      value: info
+    - key: REDIS_DAILY_COMMAND_BUDGET
+      value: '8000'
+    - key: DISCORD_TOKEN
+      sync: false
+    - key: HMAC_SECRET
+      sync: false
+    - key: DASHBOARD_URL
+      sync: false
+    - key: DEV_GUILD_ID
+      sync: false
+    - key: MAIN_GUILD_ID
+      sync: false
+    - key: DEV_AUTH_CHANNEL_ID
+      sync: false
+    - key: HEALTH_TOKEN
+      generateValue: true
+    - key: SENTRY_DSN
+      sync: false
+
+# --- Services ----------------------------------------------------------------
+
 services:
-  - type: web
-    name: eiflow-niko-robin
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-niko-robin
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-niko-robin
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: niko-robin
       - key: BOT_NAME
         value: Niko Robin
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#8E44AD'
       - key: DISCORD_CLIENT_ID
         value: '1479781452987109377'
-      - key: DISCORD_TOKEN
+      - key: BRAVE_SEARCH_API_KEY
         sync: false
-      - key: HMAC_SECRET
+      - key: SERPAPI_KEY
         sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
-      - key: SENTRY_DSN
-        sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
 
-  - type: web
-    name: eiflow-boahancock
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-boahancock
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-boahancock
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: boahancock
       - key: BOT_NAME
         value: Boa Hancock
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#FF5FA2'
       - key: DISCORD_CLIENT_ID
         value: '1479781736278917164'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
-      - key: SENTRY_DSN
-        sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
 
-  - type: web
-    name: eiflow-nami
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-nami
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-nami
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: nami
       - key: BOT_NAME
         value: Nami
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#FF8C42'
       - key: DISCORD_CLIENT_ID
         value: '1544543648065261628'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
-      - key: SENTRY_DSN
-        sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
 
-  - type: web
-    name: eiflow-cyrene
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-cyrene
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-cyrene
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: cyrene
       - key: BOT_NAME
         value: Cyrene
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#B76EFF'
       - key: DISCORD_CLIENT_ID
         value: '1544546018807513131'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
       - key: CYRENE_MODEL
         value: openai/gpt-oss-20b
       - key: ASSISTANT_MODEL
         value: mistral-small-latest
-      - key: SENTRY_DSN
+      - key: MISTRAL_API_KEY
         sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
 
-  - type: web
-    name: eiflow-zoro
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-zoro
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-zoro
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: zoro
       - key: BOT_NAME
         value: Zoro
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#2ECC71'
       - key: DISCORD_CLIENT_ID
         value: '1544547167858069504'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
       - key: AUTOMOD_SLM_MODEL
         value: llama-3.1-8b-instant
       - key: AUTOMOD_SLM_THRESHOLD
         value: '0.75'
-      - key: SENTRY_DSN
+      - key: GROQ_AUTOMOD_API_KEY
         sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
 
-  - type: web
-    name: eiflow-shanks
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-shanks
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-shanks
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: shanks
       - key: BOT_NAME
         value: Shanks
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#C0392B'
       - key: DISCORD_CLIENT_ID
         value: '1544550226373640263'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
-      - key: SENTRY_DSN
-        sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
 
-  - type: web
-    name: eiflow-luffy
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-luffy
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-luffy
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: luffy
       - key: BOT_NAME
         value: Luffy
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#F1C40F'
       - key: DISCORD_CLIENT_ID
         value: '1544550806118858792'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
-      - key: SENTRY_DSN
-        sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'
 
-  - type: web
-    name: eiflow-sanji
-    runtime: node
-    rootDir: .
-    plan: free
-    buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
+  - name: eiflow-sanji
+    <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-sanji
-    healthCheckPath: /health
-    autoDeployTrigger: off
     envVars:
       - key: BOT_ID
         value: sanji
       - key: BOT_NAME
         value: Sanji
-      - key: BOT_VERSION
-        value: 1.0.0
       - key: EMBED_COLOR
         value: '#3498DB'
       - key: DISCORD_CLIENT_ID
         value: '1544551817634119784'
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: HMAC_SECRET
-        sync: false
-      - key: OWNER_IDS
-        value: '1479589523426902208'
-      - key: HEALTH_TOKEN
-        generateValue: true
-      - key: DASHBOARD_URL
-        sync: false
-      - key: DEV_GUILD_ID
-        sync: false
-      - key: MAIN_GUILD_ID
-        sync: false
-      - key: DEV_AUTH_CHANNEL_ID
-        sync: false
-      - key: MONGODB_DB
-        value: eiflow
-      - key: MONGODB_SECONDARY_DB
-        value: eipointsecurity
-      - key: SENTRY_DSN
-        sync: false
-      - key: LOG_LEVEL
-        value: info
-      - key: REDIS_DAILY_COMMAND_BUDGET
-        value: '8000'

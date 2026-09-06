@@ -1,13 +1,35 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { signRequest, verifyRequest } from './hmac.js';
 import { TaskQueue, QueueTimeoutError } from './queue.js';
 import { enforceRateLimit } from './rate-limit.js';
 import { isSecureMongoUri } from './db/mongo.js';
-import { isGuildAuthorized } from './server-lock.js';
+import { isGuildAuthorized, attachServerLock } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
 import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
-import { buildClientOptions, handleDashboardEmbed, parseGuildAuthorizationButton } from './bot.js';
+import { buildClientOptions, handleDashboardEmbed, parseGuildAuthorizationButton, redactAuditMeta } from './bot.js';
+
+const schema = await import('node:fs').then(({ readFileSync }) =>
+  readFileSync(new URL('../../../infra/supabase/schema.sql', import.meta.url), 'utf8'),
+);
+
+describe('security schema and audit boundaries', () => {
+  it('provisions a dashboard profile when a Supabase Auth user is created', () => {
+    expect(schema).toContain('on_auth_user_created');
+    expect(schema).toContain('insert into public.users');
+    expect(schema).toContain('raw_user_meta_data');
+  });
+
+  it('redacts credential-shaped audit metadata before storage', () => {
+    expect(redactAuditMeta({
+      token: 'secret-token',
+      nested: { url: 'https://example.invalid/token', safe: 'ok' },
+    })).toEqual({
+      token: '[redacted]',
+      nested: { url: '[redacted]', safe: 'ok' },
+    });
+  });
+});
 
 describe('Discord client options', () => {
   it('omits partials when they are not configured', () => {
@@ -32,6 +54,28 @@ describe('guild authorization controls', () => {
     expect(parseGuildAuthorizationButton('guild-auth:full:123')).toBeNull();
     expect(parseGuildAuthorizationButton('guild-auth:full:123456789012345678:extra')).toBeNull();
     expect(parseGuildAuthorizationButton('guild-auth:approve:123456789012345678')).toBeNull();
+  });
+});
+
+describe('server lock lifecycle', () => {
+  it('returns cleanup for the server reconciliation timer', () => {
+    vi.useFakeTimers();
+    try {
+      let ready: (() => void) | undefined;
+      const client = {
+        once: (_event: string, callback: () => void) => { ready = callback; },
+        on: () => undefined,
+        guilds: { cache: new Map() },
+      } as never;
+      const cleanup = attachServerLock(client, {} as never);
+
+      ready?.();
+      expect(vi.getTimerCount()).toBe(1);
+      cleanup?.();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -73,20 +117,52 @@ describe('guild whitelist', () => {
     await expect(isGuildWhitelisted(supabase, '123456789012345678')).resolves.toBe(true);
   });
 
-  it('preserves datastore outages for reconciliation without widening command access', async () => {
+  it('does not trust a cached temporary grant after its expiry', async () => {
+    const expiry = new Date(Date.now() - 1_000).toISOString();
+    const calls: string[] = [];
+    const kv = {
+      get: async () => ({ allowed: true, expiresAt: expiry }),
+      set: async () => undefined,
+    } as never;
+    const supabase = {
+      from: (table: string) => {
+        calls.push(table);
+        return {
+          select: () => ({
+            eq: () => ({
+              is: () => ({
+                maybeSingle: async () => ({
+                  data: table === 'guild_whitelists'
+                    ? { whitelist_type: 'temp', expires_at: expiry, removed_at: null }
+                    : null,
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      },
+    } as never;
+
+    await expect(resolveGuildAuthorization(supabase, '849213847293847021', undefined, kv)).resolves.toBe('denied');
+    expect(calls).toEqual(['guild_whitelists']);
+  });
+
+  it('fails closed on a PostgREST schema-cache miss instead of using legacy authorization', async () => {
     const failing = {
       from: () => ({
         select: () => ({
           eq: () => ({
-            is: () => ({ maybeSingle: async () => ({ data: null, error: { code: '500' } }) }),
+            is: () => ({ maybeSingle: async () => ({ data: null, error: { code: 'PGRST205' } }) }),
           }),
         }),
       }),
     } as never;
-    await expect(resolveGuildAuthorization(failing, '123456789012345678')).resolves.toBe('unavailable');
-    await expect(isGuildWhitelisted(failing, '123456789012345678')).resolves.toBe(false);
+
+    await expect(resolveGuildAuthorization(failing, '849213847293847021')).resolves.toBe('unavailable');
   });
 });
+
 
 describe('abuse controls', () => {
   it('fails closed when the distributed limiter errors', async () => {
@@ -239,6 +315,53 @@ describe('bot interlink', () => {
     );
 
     expect(fetched).toBe(false);
+  });
+
+  it('retries an event when the handler fails before acknowledging it', async () => {
+    const event: InterlinkEvent = {
+      id: 'retry-event',
+      type: 'dashboard.send_embed',
+      sourceBot: 'dashboard',
+      targetBot: 'shanks',
+      guildId: '849213847293847021',
+      createdAt: new Date().toISOString(),
+      payload: { channelId: '123456789012345678' },
+    };
+    let attempts = 0;
+    const kv = { get: async () => event } as never;
+    const interlink = new BotInterlink(kv, 'shanks');
+    const stop = interlink.startPolling(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('transient handler failure');
+    }, 5);
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    stop();
+
+    expect(attempts).toBeGreaterThanOrEqual(2);
+  });
+
+  it('delivers untargeted broadcast events to the source bot', async () => {
+    const event: InterlinkEvent = {
+      id: 'broadcast-event',
+      type: 'dashboard.refresh',
+      sourceBot: 'dashboard',
+      createdAt: new Date().toISOString(),
+      payload: {},
+    };
+    const kv = {
+      get: async (key: string) => key === 'bot:interlink:bot:broadcast' ? event : null,
+    } as never;
+    const interlink = new BotInterlink(kv, 'shanks');
+    const received: string[] = [];
+    const stop = interlink.startPolling((current) => {
+      received.push(current.id);
+    }, 5);
+
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    stop();
+
+    expect(received).toEqual(['broadcast-event']);
   });
 
   it('polls only events targeted to the source bot once', async () => {

@@ -5,6 +5,7 @@ import type { Kv } from './redis.js';
 export type WhitelistType = GuildWhitelistRow['whitelist_type'];
 export type GuildAuthorizationResult = 'allowed' | 'denied' | 'unavailable';
 const CACHE_TTL_SECONDS = 60;
+type CachedAuthorization = { allowed: boolean; expiresAt?: string | null };
 
 function validGuildId(guildId: string): boolean {
   return /^\d{17,20}$/.test(guildId);
@@ -26,16 +27,34 @@ export async function resolveGuildAuthorization(
   if (!supabase) return 'unavailable';
 
   const cacheKey = `wl:active:${guildId}`;
+  const cacheAuthorization = async (allowed: boolean, expiresAt?: string | null): Promise<void> => {
+    if (!kv) return;
+    const expiryMs = expiresAt ? Date.parse(expiresAt) - Date.now() : Number.POSITIVE_INFINITY;
+    const ttl = Number.isFinite(expiryMs)
+      ? Math.max(1, Math.min(CACHE_TTL_SECONDS, Math.ceil(expiryMs / 1000)))
+      : CACHE_TTL_SECONDS;
+    await kv.set(cacheKey, { allowed, expiresAt: expiresAt ?? null }, ttl).catch(() => undefined);
+  };
   if (kv) {
     try {
-      const cached = await kv.get<{ allowed: boolean }>(cacheKey);
-      if (cached && typeof cached.allowed === 'boolean') return cached.allowed ? 'allowed' : 'denied';
+      const cached = await kv.get<CachedAuthorization>(cacheKey);
+      if (cached && typeof cached.allowed === 'boolean') {
+        if (!cached.allowed) return 'denied';
+        if (!Object.prototype.hasOwnProperty.call(cached, 'expiresAt')) {
+          // Legacy allowed entries lack expiry metadata; refresh from the database.
+        } else if (cached.expiresAt === null) {
+          return 'allowed';
+        } else if (typeof cached.expiresAt === 'string' && Date.parse(cached.expiresAt) > Date.now()) {
+          return 'allowed';
+        }
+      }
     } catch {
       // Cache failures must never widen access. Resolve from Supabase below.
     }
   }
 
   let allowed = false;
+  let cacheExpiresAt: string | null = null;
   let useLegacyAuthorization = false;
   try {
     const { data, error } = await supabase
@@ -45,6 +64,7 @@ export async function resolveGuildAuthorization(
       .is('removed_at', null)
       .maybeSingle();
     if (!error && data) {
+      cacheExpiresAt = data.whitelist_type === 'temp' ? data.expires_at ?? null : null;
       if (data.whitelist_type === 'full') allowed = true;
       else if (data.whitelist_type === 'temp' && data.expires_at) allowed = Date.parse(data.expires_at) > Date.now();
       else allowed = false;
@@ -52,7 +72,7 @@ export async function resolveGuildAuthorization(
       const code = error && typeof error === 'object' && 'code' in error
         ? String((error as { code?: unknown }).code)
         : '';
-      useLegacyAuthorization = code === '42P01' || code === 'PGRST205';
+      useLegacyAuthorization = code === '42P01';
       if (error && !useLegacyAuthorization) return 'unavailable';
     }
   } catch {
@@ -60,7 +80,7 @@ export async function resolveGuildAuthorization(
   }
 
   if (!useLegacyAuthorization) {
-    if (kv) await kv.set(cacheKey, { allowed }, CACHE_TTL_SECONDS).catch(() => undefined);
+    await cacheAuthorization(allowed, cacheExpiresAt);
     return allowed ? 'allowed' : 'denied';
   }
 
@@ -75,7 +95,7 @@ export async function resolveGuildAuthorization(
   } catch {
     return 'unavailable';
   }
-  if (kv) await kv.set(cacheKey, { allowed }, CACHE_TTL_SECONDS).catch(() => undefined);
+  await cacheAuthorization(allowed, null);
   return allowed ? 'allowed' : 'denied';
 }
 

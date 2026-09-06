@@ -32,4 +32,33 @@ describe('batch writer shutdown', () => {
     expect(stopped).toBe(true);
     expect(writer.stats().flushed).toBe(1);
   });
+
+  it('drains documents added while a batch is in flight', async () => {
+    let release!: () => void;
+    let writes = 0;
+    const writeRelease = new Promise<void>((resolve) => { release = resolve; });
+    const collection = {
+      insertMany: async () => {
+        writes += 1;
+        if (writes === 1) await writeRelease;
+      },
+    } as never;
+    const writer = createBatchWriter({
+      getCollection: () => collection,
+      intervalMs: 60_000,
+      maxBatch: 1,
+    });
+
+    writer.push({ action: 'first' });
+    await Promise.resolve();
+    writer.push({ action: 'second' });
+
+    const stopping = writer.stop();
+    release();
+    await stopping;
+
+    expect(writes).toBe(2);
+    expect(writer.stats().buffered).toBe(0);
+    expect(writer.stats().flushed).toBe(2);
+  });
 });
