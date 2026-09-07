@@ -29,6 +29,7 @@ const field = (src, key) => {
   return m ? m[1].trim() : null;
 };
 const kv = (key) => field(raw, key);
+const grab = (re) => raw.match(re)?.[1] ?? '';
 
 const BOT_IDS = ['shanks','sanji','zoro','boahancock','nami','luffy','niko-robin','cyrene'];
 const PORT_BASE = 3100; // shanks=3101 ... cyrene=3108
@@ -84,11 +85,28 @@ function buildEnv(botId, port) {
     LOG_LEVEL: 'info',
     PORT: String(port),
     REDIS_DAILY_COMMAND_BUDGET: '8000',
+    // Per-bot provider keys from the cred file (optional — a missing key
+    // leaves the feature disabled, never a boot failure). Parsed in-process,
+    // injected straight into the child env, never printed or persisted.
+    ...(botId === 'cyrene' && {
+      GROQ_API_KEY: grab(/"gpt oss" = (\S+)/),
+      MISTRAL_API_KEY: grab(/"Ministral 3 8B" = (\S+)/),
+      CYRENE_MODEL: 'openai/gpt-oss-20b',
+      ASSISTANT_MODEL: 'ministral-8b-latest',
+    }),
+    ...(botId === 'shanks' && {
+      NVIDIA_NIM_API_KEY: grab(/nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/),
+      CEREBRAS_API_KEY: grab(/"qwen-3\.8-27b" with limit[^=]*= (\S+)/),
+    }),
+    ...(botId === 'niko-robin' && {
+      MODELSCOPE_API_KEY: grab(/modelscope Qwen\/Qwen3\.5-35B-A3B = (\S+)/),
+    }),
     // Match Render's 512MB free-plan contract: cap the V8 heap so a leak
     // crashes into a visible restart instead of eating the whole machine.
     NODE_OPTIONS: '--max-old-space-size=384',
   };
-  const missing = Object.entries(own).filter(([, v]) => !v).map(([k]) => k);
+  const requiredEnv = ['BOT_ID', 'BOT_NAME', 'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'HMAC_SECRET', 'HEALTH_TOKEN'];
+  const missing = requiredEnv.filter((k) => !own[k]);
   if (missing.length) throw new Error(`empty required env values: ${missing.join(', ')}`);
   return { ...process.env, ...own };
 }

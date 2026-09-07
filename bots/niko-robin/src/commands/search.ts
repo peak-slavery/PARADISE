@@ -8,6 +8,7 @@ import {
   type SearchFailureReason,
   searchWeb,
 } from '../lib/search.js';
+import { summarizerEnabled, summarizeResults } from '../lib/summarize.js';
 
 export const data = new SlashCommandBuilder()
   .setName('search')
@@ -117,6 +118,14 @@ export async function execute(ctx: Ctx): Promise<void> {
   // Discord allows 25 fields per embed; chunk so a future limit bump cannot 400.
   const [first = []] = chunkFields(fields, 25);
 
+  // SLM brief: when the summarizer is configured, the embed leads with a
+  // plain-language answer and keeps the raw links below it. Any failure →
+  // null → the verbatim snippets embed below stays the fallback.
+  let summary: string | null = null;
+  if (summarizerEnabled(ctx.services.env)) {
+    summary = await summarizeResults(ctx, query, outcome.results);
+  }
+
   ctx.services.logs.push({
     bot_id: ctx.services.env.botId,
     guild_id: ctx.guildId,
@@ -130,14 +139,23 @@ export async function execute(ctx: Ctx): Promise<void> {
       provider: outcome.provider,
       cached: outcome.cached,
       results: outcome.results.length,
+      summarized: Boolean(summary),
     },
     created_at: new Date(),
   });
 
+  const description = summary
+    ? `${summary}\n\nSources below · via ${PROVIDER_LABELS[outcome.provider]}`
+    : `Top ${first.length} result(s) via ${PROVIDER_LABELS[outcome.provider]}`;
+
   await ctx.replyEmbed(
-    ctx.services.embeds.brand(`Results for “${query}”`, `Top ${first.length} result(s) via ${PROVIDER_LABELS[outcome.provider]}`, {
+    ctx.services.embeds.brand(`Results for “${query}”`, description, {
       fields: first,
-      footerSuffix: outcome.cached ? 'cached result' : 'live result',
+      footerSuffix: summary
+        ? 'AI brief + sources'
+        : outcome.cached
+          ? 'cached result'
+          : 'live result',
     }),
   );
 }

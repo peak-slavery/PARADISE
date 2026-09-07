@@ -77,6 +77,10 @@ services:
         value: '#8E44AD'
       - key: DISCORD_CLIENT_ID
         value: '1479781452987109377'
+      - key: MODELSCOPE_API_KEY
+        sync: false
+      - key: SEARCH_SLM_MODEL
+        value: Qwen/Qwen3.5-35B-A3B
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: SERPAPI_KEY
@@ -123,7 +127,7 @@ services:
       - key: CYRENE_MODEL
         value: openai/gpt-oss-20b
       - key: ASSISTANT_MODEL
-        value: mistral-small-latest
+        value: ministral-8b-latest
       - key: MISTRAL_API_KEY
         sync: false
       - key: GROQ_API_KEY
@@ -164,6 +168,14 @@ services:
         value: '#C0392B'
       - key: DISCORD_CLIENT_ID
         value: '1544550226373640263'
+      - key: SECURITY_SLM_MODEL
+        value: nvidia/nemotron-3.5-content-safety
+      - key: SECURITY_SLM_FALLBACK_MODEL
+        value: qwen-3.8-27b
+      - key: NVIDIA_NIM_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
 
   - name: eiflow-luffy
     <<: *bot-common

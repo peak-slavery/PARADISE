@@ -23,7 +23,10 @@ const COMMON_MAPPINGS = [
 ] as const;
 
 const EXTRA_MAPPINGS: Record<BotId, readonly (readonly [string, string])[]> = {
-  shanks: [],
+  shanks: [
+    ['provider.nvidia_nim.api_key', 'NVIDIA_NIM_API_KEY'],
+    ['provider.cerebras.api_key', 'CEREBRAS_API_KEY'],
+  ],
   sanji: [],
   zoro: [['provider.groq_automod.api_key', 'GROQ_AUTOMOD_API_KEY']],
   boahancock: [],
@@ -32,6 +35,7 @@ const EXTRA_MAPPINGS: Record<BotId, readonly (readonly [string, string])[]> = {
   'niko-robin': [
     ['provider.brave.api_key', 'BRAVE_SEARCH_API_KEY'],
     ['provider.serpapi.api_key', 'SERPAPI_KEY'],
+    ['provider.modelscope.api_key', 'MODELSCOPE_API_KEY'],
   ],
   cyrene: [
     ['provider.groq.api_key', 'GROQ_API_KEY'],

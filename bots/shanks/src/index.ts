@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Events, GatewayIntentBits } from 'discord.js';
 import { createBot, isBotOperational, readBotConfig, sendChannelEmbed } from '@eiflow/shared';
+import { classifyText, slmEnabled } from './lib/slm.js';
 import { DEFAULT_CONFIG } from './lib/store.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -53,6 +54,70 @@ await createBot({
           },
           created_at: new Date(),
         });
+
+        /**
+         * SLM second opinion: when the security classifier is configured, run
+         * the flagged content through it and auto-warn on a confident "bad"
+         * verdict. Fail-open — an unavailable classifier never blocks the
+         * mirror log above and never escalates on its own.
+         */
+        const content = execution.matchedContent ?? execution.content ?? null;
+        if (slmEnabled(services.env) && content && content.trim().length > 0) {
+          const result = await classifyText(services.env, content);
+          if (result.ok && result.bad && result.confidence >= services.env.automodSlmThreshold) {
+            const reason = `AutoMod: ${result.category} (confidence ${(result.confidence * 100).toFixed(0)}%)`;
+
+            services.logs.push({
+              bot_id: services.env.botId,
+              guild_id: guildId,
+              channel_id: execution.channelId ?? null,
+              user_id: execution.userId,
+              action: 'automod.slm',
+              level: 'warn',
+              message: `SLM flagged ${result.category} at ${(result.confidence * 100).toFixed(0)}% — warning issued`,
+              meta: {
+                model: result.model,
+                category: result.category,
+                confidence: result.confidence,
+                ruleId: execution.ruleId,
+              },
+              created_at: new Date(),
+            });
+
+            if (services.supabase) {
+              const { error } = await services.supabase
+                .from('mod_actions')
+                .insert({
+                  guild_id: guildId,
+                  bot_id: services.env.botId,
+                  action: 'warn',
+                  target_id: execution.userId,
+                  moderator_id: services.env.botId,
+                  reason,
+                  duration_seconds: null,
+                  active: true,
+                  expires_at: null,
+                });
+              if (error) log.warn({ err: error }, 'automod warn not persisted');
+            }
+
+            try {
+              const user = await client.users.fetch(execution.userId);
+              await user.send({
+                embeds: [
+                  services.embeds.warning('AutoMod warning', reason, {
+                    fields: [
+                      { name: 'Channel', value: execution.channelId ? `<#${execution.channelId}>` : 'Unknown', inline: true },
+                      { name: 'Reviewed by', value: `automated check (\`${result.model}\`)`, inline: true },
+                    ],
+                  }),
+                ],
+              });
+            } catch (err) {
+              log.debug({ err, userId: execution.userId }, 'automod warn DM not delivered');
+            }
+          }
+        }
 
         const channelId = config.automod_log_channel;
         if (!channelId) return;

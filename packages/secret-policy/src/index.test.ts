@@ -19,9 +19,10 @@ describe('runtime secret policy', () => {
     }
     expect(getAllowedRuntimeSecrets('niko-robin')).toContain('provider.brave.api_key');
     expect(getAllowedRuntimeSecrets('niko-robin')).toContain('provider.serpapi.api_key');
+    expect(getAllowedRuntimeSecrets('niko-robin')).toContain('provider.modelscope.api_key');
     expect(getAllowedRuntimeSecrets('cyrene')).toEqual([...common, 'provider.groq.api_key', 'provider.gemini.api_key', 'provider.openrouter.api_key', 'provider.mistral.api_key']);
     expect(getAllowedRuntimeSecrets('zoro')).toContain('provider.groq_automod.api_key');
-    expect(getAllowedRuntimeSecrets('shanks')).toEqual(common);
+    expect(getAllowedRuntimeSecrets('shanks')).toEqual([...common, 'provider.nvidia_nim.api_key', 'provider.cerebras.api_key']);
   });
 
   it('fails closed for unknown bots', () => {

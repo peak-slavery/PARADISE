@@ -86,14 +86,27 @@ const EnvSchema = z.object({
   /** Dedicated Groq key for the AutoMod SLM, isolated from the chat quota. */
   GROQ_AUTOMOD_API_KEY: optString,
 
+  /** NVIDIA NIM key — Shanks bad-words classifier primary. */
+  NVIDIA_NIM_API_KEY: optString,
+  /** Cerebras key — Shanks bad-words classifier fallback. */
+  CEREBRAS_API_KEY: optString,
+  /** ModelScope key — Niko Robin search-result summarizer. */
+  MODELSCOPE_API_KEY: optString,
+
   /** gpt-oss, served by Groq — the Cyrene persona. */
   CYRENE_MODEL: z.string().default('openai/gpt-oss-20b'),
   /** Mistral, served by mistral.ai — the general assistant. */
-  ASSISTANT_MODEL: z.string().default('mistral-small-latest'),
+  ASSISTANT_MODEL: z.string().default('ministral-8b-latest'),
   /** Small fast model used by Zoro for content classification. */
   AUTOMOD_SLM_MODEL: z.string().default('llama-3.1-8b-instant'),
   /** 0..1 confidence the SLM must report before AutoMod acts. */
   AUTOMOD_SLM_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
+  /** NVIDIA NIM content-safety model — Shanks primary classifier. */
+  SECURITY_SLM_MODEL: z.string().default('nvidia/nemotron-3.5-content-safety'),
+  /** Cerebras fallback model for the same classifier. */
+  SECURITY_SLM_FALLBACK_MODEL: z.string().default('qwen-3.8-27b'),
+  /** ModelScope Qwen model — Niko Robin search summarizer. */
+  SEARCH_SLM_MODEL: z.string().default('Qwen/Qwen3.5-35B-A3B'),
 });
 
 export type RawEnv = z.input<typeof EnvSchema>;
@@ -139,10 +152,16 @@ export interface Env {
 
   mistralApiKey: string | undefined;
   groqAutomodApiKey: string | undefined;
+  nvidiaNimApiKey: string | undefined;
+  cerebrasApiKey: string | undefined;
+  modelScopeApiKey: string | undefined;
   cyreneModel: string;
   assistantModel: string;
   automodSlmModel: string;
   automodSlmThreshold: number;
+  securitySlmModel: string;
+  securitySlmFallbackModel: string;
+  searchSlmModel: string;
 
   /** True when both Supabase values are present. */
   hasSupabase: boolean;
@@ -156,6 +175,10 @@ export interface Env {
   hasMistral: boolean;
   /** True when the dedicated AutoMod Groq key is present. */
   hasAutomodSlm: boolean;
+  /** True when the NVIDIA NIM or Cerebras security-classifier key is present. */
+  hasSecuritySlm: boolean;
+  /** True when the ModelScope search-summarizer key is present. */
+  hasSearchSlm: boolean;
 }
 
 let cached: Env | undefined;
@@ -210,16 +233,24 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     openrouterApiKey: d.OPENROUTER_API_KEY,
     mistralApiKey: d.MISTRAL_API_KEY,
     groqAutomodApiKey: d.GROQ_AUTOMOD_API_KEY,
+    nvidiaNimApiKey: d.NVIDIA_NIM_API_KEY,
+    cerebrasApiKey: d.CEREBRAS_API_KEY,
+    modelScopeApiKey: d.MODELSCOPE_API_KEY,
     cyreneModel: d.CYRENE_MODEL,
     assistantModel: d.ASSISTANT_MODEL,
     automodSlmModel: d.AUTOMOD_SLM_MODEL,
     automodSlmThreshold: d.AUTOMOD_SLM_THRESHOLD,
+    securitySlmModel: d.SECURITY_SLM_MODEL,
+    securitySlmFallbackModel: d.SECURITY_SLM_FALLBACK_MODEL,
+    searchSlmModel: d.SEARCH_SLM_MODEL,
     hasSupabase: Boolean(supabaseUrl && supabaseServiceRoleKey),
     hasMongo: Boolean(mongodbUri),
     hasSecondaryMongo: Boolean(mongodbSecondaryUri),
     hasRedis: Boolean(upstashUrl && upstashToken),
     hasMistral: Boolean(d.MISTRAL_API_KEY),
     hasAutomodSlm: Boolean(d.GROQ_AUTOMOD_API_KEY),
+    hasSecuritySlm: Boolean(d.NVIDIA_NIM_API_KEY || d.CEREBRAS_API_KEY),
+    hasSearchSlm: Boolean(d.MODELSCOPE_API_KEY),
   };
 
   return cached;
