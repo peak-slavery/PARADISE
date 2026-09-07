@@ -61,8 +61,8 @@ psql "$SUPABASE_DB_URL" < infra/supabase/schema.sql
 
 The schema is idempotent (`CREATE OR REPLACE` everywhere). It provisions
 the `users` table mirror, the `guild_whitelists`, `server_settings`,
-`bot_states`, `audit_logs`, and `secret_vaults` tables, plus the RLS
-policies. The `owns_guild` helper is `SECURITY DEFINER`; if your Supabase
+`bot_states`, `security_events`, `mod_actions`, and `secret_records`
+tables, plus the RLS policies. The `owns_guild` helper is `SECURITY DEFINER`; if your Supabase
 project has a stricter `SECURITY DEFINER` lint than the one this repo was
 developed against, run the lint after the schema loads and address each
 finding before opening the dashboard to the public.
