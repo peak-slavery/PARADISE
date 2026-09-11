@@ -15,6 +15,7 @@ await createBot({
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.AutoModerationExecution,
   ],
   commandsDir,
   unlimitedCommands: ['userinfo', 'serverinfo', 'about', 'help'],
@@ -62,9 +63,14 @@ await createBot({
          * mirror log above and never escalates on its own.
          */
         const content = execution.matchedContent ?? execution.content ?? null;
-        if (slmEnabled(services.env) && content && content.trim().length > 0) {
-          const result = await classifyText(services.env, content);
-          if (result.ok && result.bad && result.confidence >= services.env.automodSlmThreshold) {
+        if (config.automod_warnings !== false && slmEnabled(services.env) && content && content.trim().length > 0) {
+          // Discord emits one event per rule action. Review a message only once.
+          const reviewKey = `shanks:automod:${guildId}:${execution.messageId ?? `${execution.userId}:${execution.ruleId}`}`;
+          const claimed = await services.redis.incr(reviewKey, 60).catch(() => 0);
+          const result = claimed === 1
+            ? await services.queue.run(() => classifyText(services.env, content), { maxPending: 16 }).catch(() => null)
+            : null;
+          if (result?.ok && result.bad && result.confidence >= services.env.automodSlmThreshold) {
             const reason = `AutoMod: ${result.category} (confidence ${(result.confidence * 100).toFixed(0)}%)`;
 
             services.logs.push({
@@ -92,7 +98,7 @@ await createBot({
                   bot_id: services.env.botId,
                   action: 'warn',
                   target_id: execution.userId,
-                  moderator_id: services.env.botId,
+                  moderator_id: client.user!.id,
                   reason,
                   duration_seconds: null,
                   active: true,

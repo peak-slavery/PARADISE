@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, type EmbedBuilder } from 'discord.js';
-import { chunkFields, type CommandModule, escapeMarkdown, keys, sanitizeText, truncateFieldValue } from '@eiflow/shared';
+import { chunkFields, type CommandModule, escapeMarkdown, keys, readBotConfig, sanitizeText, truncateFieldValue } from '@eiflow/shared';
 import {
   COOLDOWN_SECONDS,
   MAX_RESULTS,
@@ -77,10 +77,11 @@ export async function execute(ctx: Ctx): Promise<void> {
   // Sanitise before the value reaches the cache key, the URL or the embed.
   const query = sanitizeText(ctx.requiredString('query'), 200);
 
-  const requested = ctx.intOption('limit') ?? MAX_RESULTS;
+  const config = await readBotConfig(ctx.services.supabase, ctx.guildId, ctx.services.env.botId, { resultCount: MAX_RESULTS, ephemeral: false });
+  const requested = ctx.intOption('limit') ?? config.resultCount;
   const limit = Math.min(MAX_RESULTS, Math.max(1, requested));
 
-  await ctx.defer();
+  await ctx.defer(config.ephemeral === true);
 
   // Per-user cooldown: one request per window, so a single user cannot drain
   // the shared provider quota. Redis failures fail closed.

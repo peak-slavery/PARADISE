@@ -71,25 +71,26 @@ export async function PUT(
 
   for (const field of bot.fields) {
     const raw = incoming[field.key];
-    if (raw === undefined) continue;
+    if (raw === undefined) return NextResponse.json({ error: `Missing setting: ${field.label}` }, { status: 400 });
 
     switch (field.type) {
       case 'boolean':
-        clean[field.key] = raw === true || raw === 'true' || raw === 1;
+        if (typeof raw !== 'boolean') return NextResponse.json({ error: `Invalid setting: ${field.label}` }, { status: 400 });
+        clean[field.key] = raw;
         break;
 
       case 'number': {
         const num = typeof raw === 'number' ? raw : Number(raw);
-        if (!Number.isFinite(num)) continue;
+        if (!Number.isFinite(num)) return NextResponse.json({ error: `Invalid setting: ${field.label}` }, { status: 400 });
         const min = field.min ?? Number.NEGATIVE_INFINITY;
         const max = field.max ?? Number.POSITIVE_INFINITY;
-        clean[field.key] = Math.min(Math.max(num, min), max);
+        clean[field.key] = Math.min(Math.max(field.step && field.step < 1 ? num : Math.trunc(num), min), max);
         break;
       }
 
       case 'select': {
         const allowed = field.options.some((option) => option.value === raw);
-        if (!allowed) continue;
+        if (!allowed) return NextResponse.json({ error: `Invalid setting: ${field.label}` }, { status: 400 });
         clean[field.key] = String(raw);
         break;
       }
@@ -97,7 +98,14 @@ export async function PUT(
       case 'text':
       case 'textarea':
       default:
-        clean[field.key] = typeof raw === 'string' ? raw.slice(0, 4000) : String(raw);
+        if (typeof raw !== 'string') return NextResponse.json({ error: `Invalid setting: ${field.label}` }, { status: 400 });
+        if (field.key.endsWith('_channel') && raw.trim() && !/^\d{17,20}$/.test(raw.trim())) {
+          return NextResponse.json({ error: `${field.label} must be a Discord channel ID` }, { status: 400 });
+        }
+        if (field.key.endsWith('Model') && raw.trim() && !/^[A-Za-z0-9._:/-]{1,100}$/.test(raw.trim())) {
+          return NextResponse.json({ error: 'Invalid model ID' }, { status: 400 });
+        }
+        clean[field.key] = raw.trim().slice(0, botId === 'boahancock' ? 500 : 4000);
         break;
     }
   }

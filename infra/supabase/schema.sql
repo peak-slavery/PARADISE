@@ -90,13 +90,13 @@ create table if not exists public.internal_request_nonces (
   created_at timestamptz not null default now()
 );
 drop function if exists public.apply_bot_config_request(text, text, text, jsonb);
+drop function if exists public.apply_bot_config_request(text, text, text, jsonb, boolean);
 
 create or replace function public.apply_bot_config_request(
   p_request_id text,
   p_guild_id text,
   p_bot_id text,
-  p_config jsonb,
-  p_allow_legacy boolean default false
+  p_config jsonb
 )
 returns boolean
 language plpgsql
@@ -117,18 +117,15 @@ begin
            or (whitelist_type = 'temp' and (expires_at is null or expires_at <= now()))
          )
      )
-     or (
-       not p_allow_legacy
-       and not exists (
-         select 1
-         from public.guild_whitelists
-         where guild_id = p_guild_id
-           and removed_at is null
-           and (
-             whitelist_type = 'full'
-             or (whitelist_type = 'temp' and expires_at > now())
-           )
-       )
+     or not exists (
+       select 1
+       from public.guild_whitelists
+       where guild_id = p_guild_id
+         and removed_at is null
+         and (
+           whitelist_type = 'full'
+           or (whitelist_type = 'temp' and expires_at > now())
+         )
      ) then
     raise exception 'guild is not authorized';
   end if;
@@ -149,8 +146,8 @@ begin
 end;
 $$;
 
-revoke all on function public.apply_bot_config_request(text, text, text, jsonb, boolean) from public;
-grant execute on function public.apply_bot_config_request(text, text, text, jsonb, boolean) to service_role;
+revoke all on function public.apply_bot_config_request(text, text, text, jsonb) from public;
+grant execute on function public.apply_bot_config_request(text, text, text, jsonb) to service_role;
 
 create or replace function public.prevent_user_authority_changes()
 returns trigger

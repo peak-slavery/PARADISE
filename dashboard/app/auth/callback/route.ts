@@ -28,6 +28,9 @@ export async function GET(request: NextRequest) {
 
   const code = requestUrl.searchParams.get('code');
   const target = safeInternalTarget(requestUrl.searchParams.get('next'));
+  if (requestUrl.searchParams.has('error')) {
+    return redirectToLogin(origin, 'access_denied');
+  }
 
   if (!code) {
     return redirectToLogin(origin, STABLE_ERRORS.missingCode);

@@ -200,6 +200,7 @@ function NavContent({
       </Link>
 
       <nav className="flex flex-col gap-1">
+        {profile?.is_master && !demo ? <NavLink href="/dashboard/admin" active={pathname === '/dashboard/admin'} onNavigate={onNavigate} icon={<IconShield size={17} />} label="Master controls" /> : null}
         <NavLink
           href="/dashboard"
           active={overviewActive}

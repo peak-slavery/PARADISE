@@ -35,17 +35,22 @@ export function SignInPanel({
     setPhase('redirecting');
     setMessage(null);
 
+    try {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        scopes: 'identify guilds',
+        scopes: 'identify email',
       },
     });
 
     if (error) {
       setPhase('error');
-      setMessage(error.message);
+      setMessage('Discord sign-in could not start. Check that Discord is enabled in Supabase Authentication and the callback URL is allowed.');
+    }
+    } catch {
+      setPhase('error');
+      setMessage('The authentication service could not be reached. Please try again.');
     }
     // On success the browser navigates away; nothing else to do.
   }
@@ -74,17 +79,17 @@ export function SignInPanel({
         </span>
 
         <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-          Sign in to Ei Point
+          Welcome aboard.
         </h1>
         <p className="mt-2.5 text-sm leading-relaxed text-ink-soft">
-          We use Discord OAuth so your guild list comes straight from the API.
-          Your access token is never stored — only the session cookie.
+          Sign in with Discord to reach your command deck. Access is limited to
+          authorized servers linked to your account.
         </p>
 
         <button
           type="button"
           onClick={signInWithDiscord}
-          disabled={phase === 'redirecting'}
+           disabled={!configured || phase === 'redirecting'}
           className="btn-neu-primary mt-7 w-full px-5 py-3 text-base disabled:cursor-wait disabled:opacity-80"
         >
           {phase === 'redirecting' ? (
@@ -167,7 +172,11 @@ function friendlyError(raw: string): string {
       return 'Discord did not return an authorization code. Try again.';
     case 'not_configured':
       return 'Supabase is not configured, so sign-in is unavailable.';
+    case 'exchange_failed':
+      return 'Your sign-in session expired or could not be verified. Start again from this browser.';
+    case 'access_denied':
+      return 'Discord sign-in was cancelled. You can try again when ready.';
     default:
-      return decoded;
+      return 'Discord sign-in failed. Please try again.';
   }
 }

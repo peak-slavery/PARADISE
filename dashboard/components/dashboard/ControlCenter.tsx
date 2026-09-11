@@ -140,6 +140,7 @@ export function ControlCenter({ guildId }: { guildId: string }) {
   const [settings, setSettings] = useState<ServerSettingsRow>({ ...EMPTY_SETTINGS, guild_id: guildId });
   const [states, setStates] = useState<BotStateRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,13 +164,14 @@ export function ControlCenter({ guildId }: { guildId: string }) {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetch(`/api/server-settings/${guildId}`, { cache: 'no-store' }).then((response) => response.json()),
-      fetch(`/api/bot-state/${guildId}`, { cache: 'no-store' }).then((response) => response.json()),
+      fetch(`/api/server-settings/${guildId}`, { cache: 'no-store' }).then((response) => { if (!response.ok) throw new Error('Settings unavailable'); return response.json(); }),
+      fetch(`/api/bot-state/${guildId}`, { cache: 'no-store' }).then((response) => { if (!response.ok) throw new Error('Bot states unavailable'); return response.json(); }),
     ])
       .then(([settingsPayload, statesPayload]) => {
         if (!active) return;
         if (settingsPayload.settings) setSettings({ ...EMPTY_SETTINGS, ...settingsPayload.settings });
         if (Array.isArray(statesPayload.states)) setStates(statesPayload.states as BotStateRow[]);
+        setLoaded(true);
       })
       .catch(() => {
         if (active) setError('Control state could not be loaded.');
@@ -288,6 +290,7 @@ export function ControlCenter({ guildId }: { guildId: string }) {
 
   return (
     <div className="mb-6 grid gap-5">
+      {error ? <div role="alert" className="rounded-2xl border border-accent/30 bg-base-raised p-4 text-sm text-accent-ink">{error}</div> : null}
       <Section
         eyebrow="Control plane"
         title="Fleet controls"
@@ -303,7 +306,7 @@ export function ControlCenter({ guildId }: { guildId: string }) {
               <Toggle
                 label="Pause server"
                 checked={settings.server_paused}
-                disabled={loading || saving === 'server'}
+                disabled={!loaded || saving !== null}
                 onChange={(server_paused) => void patchSettings({ server_paused }, 'server')}
               />
             </div>
@@ -314,7 +317,7 @@ export function ControlCenter({ guildId }: { guildId: string }) {
               </span>
               <select
                 value={settings.theme}
-                disabled={loading || saving === 'theme'}
+                disabled={!loaded || saving !== null}
                 onChange={(event) => void patchSettings({ theme: event.target.value as DashboardTheme }, 'theme')}
                 className="rounded-xl bg-base-raised px-2.5 py-2 text-xs font-semibold text-ink neu-raised-sm outline-none"
               >
@@ -325,7 +328,7 @@ export function ControlCenter({ guildId }: { guildId: string }) {
             </label>
           </div>
           <div className="flex min-h-12 items-center justify-center rounded-2xl bg-base-sunken px-4 text-xs text-ink-muted neu-inset-sm">
-            {loading ? 'Loading control state…' : settings.server_paused ? 'Server paused' : 'Server accepting commands'}
+            {loading ? 'Loading control state…' : !loaded ? 'Control state unavailable' : settings.server_paused ? 'Server paused' : 'Server enabled (not a gateway health check)'}
           </div>
         </div>
 
@@ -339,15 +342,15 @@ export function ControlCenter({ guildId }: { guildId: string }) {
                 <div className="flex items-center gap-2.5">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: bot.color, opacity: enabled && !paused ? 1 : 0.35 }} />
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{bot.name}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-faint">{enabled && !paused ? 'Live' : 'Off'}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-ink-faint">{!loaded ? 'Unknown' : settings.server_paused || paused ? 'Paused' : enabled ? 'Enabled' : 'Off'}</span>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 text-xs text-ink-muted">
                   <span>{paused ? 'Paused' : enabled ? 'Enabled' : 'Disabled'}</span>
                   <div className="flex items-center gap-2">
-                    <button type="button" className="rounded-lg px-2 py-1 neu-press" disabled={saving === `bot:${bot.id}`} onClick={() => void patchBotState(bot.id, { paused: !paused })}>
+                    <button type="button" className="rounded-lg px-2 py-1 neu-press" disabled={!loaded || saving !== null} onClick={() => void patchBotState(bot.id, { paused: !paused })}>
                       {paused ? 'Resume' : 'Pause'}
                     </button>
-                    <Toggle label={`Enable ${bot.name}`} checked={enabled} disabled={saving === `bot:${bot.id}`} onChange={(next) => void patchBotState(bot.id, { enabled: next })} />
+                    <Toggle label={`Enable ${bot.name}`} checked={enabled} disabled={!loaded || saving !== null} onChange={(next) => void patchBotState(bot.id, { enabled: next })} />
                   </div>
                 </div>
               </div>
@@ -429,7 +432,7 @@ export function ControlCenter({ guildId }: { guildId: string }) {
               </div>
             </div>
 
-            <button type="button" disabled={saving === 'send' || !composer.channelId.trim() || (!composer.title.trim() && !composer.description.trim() && previewFields.length === 0)} onClick={() => void sendEmbed()} className="btn-neu-primary w-full disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
+            <button type="button" disabled={!loaded || saving !== null || settings.server_paused || selectedState?.enabled === false || selectedState?.paused || !/^\d{17,20}$/.test(composer.channelId.trim()) || (!composer.title.trim() && !composer.description.trim() && previewFields.length === 0)} onClick={() => void sendEmbed()} className="btn-neu-primary w-full disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
               {saving === 'send' ? 'Queuing…' : `Send with ${selectedBot?.name ?? 'bot'}`}
             </button>
           </div>

@@ -24,7 +24,7 @@ export function BotTabs({ guildId, active }: { guildId: string; active: BotId })
   return (
     <div className="rounded-3xl glass glass-sheen p-2">
       <div
-        role="tablist"
+        role="navigation"
         aria-label="Bots"
         className="no-scrollbar flex gap-1 overflow-x-auto"
       >
@@ -45,8 +45,7 @@ export function BotTabs({ guildId, active }: { guildId: string; active: BotId })
             <Link
               key={bot.id}
               href={href}
-              role="tab"
-              aria-selected={isActive}
+              aria-current={isActive ? 'page' : undefined}
               scroll={false}
               className={[
                 'relative flex shrink-0 items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold transition-colors duration-200',

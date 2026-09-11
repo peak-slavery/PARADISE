@@ -34,11 +34,18 @@ export async function registerCommands(dirs: string[], guildId?: string): Promis
   }
 
   const rest = new REST({ version: '10' }).setToken(env.discordToken);
-
-  if (guildId) {
-    await rest.put(Routes.applicationGuildCommands(env.discordClientId, guildId), { body });
-  } else {
-    await rest.put(Routes.applicationCommands(env.discordClientId), { body });
+  const route = guildId
+    ? Routes.applicationGuildCommands(env.discordClientId, guildId)
+    : Routes.applicationCommands(env.discordClientId);
+  const application = await rest.get(Routes.oauth2CurrentApplication()) as { id: string };
+  if (application.id !== env.discordClientId) {
+    throw new Error(`Application id does not match the token for ${env.botId}`);
+  }
+  await rest.put(route, { body });
+  const registered = await rest.get(route) as { name: string; type: number }[];
+  const names = new Set(registered.filter((command) => command.type === 1).map((command) => command.name));
+  if (names.size !== body.length || body.some((command) => !names.has(command.name))) {
+    throw new Error(`Command verification failed for ${env.botId}`);
   }
 
   return { botId: env.botId, count: body.length, scope: guildId ? 'guild' : 'global' };

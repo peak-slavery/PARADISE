@@ -20,7 +20,9 @@ function mergeConfig(
   const bot = getBot(botId);
   const values: ConfigValues = {};
   for (const field of bot.fields) {
-    const raw = stored[field.key];
+    const raw = field.key.startsWith('events.')
+      ? (stored.events as Record<string, unknown> | undefined)?.[field.key.slice(7)]
+      : stored[field.key];
     if (raw === undefined || raw === null) {
       values[field.key] = field.default;
       continue;
@@ -67,7 +69,7 @@ export async function getBotConfig(guildId: string, botId: string): Promise<Conf
     .maybeSingle();
 
   if (error) {
-    return { values: mergeConfig(botId, {}), updatedAt: null, demo: false };
+    throw new Error('Unable to load bot configuration');
   }
 
   const row = data as { config: Record<string, unknown> | null; updated_at: string } | null;
@@ -109,7 +111,7 @@ export async function saveBotConfig(
   const { data, error } = await supabase
     .from('bot_configs')
     .upsert(
-      { guild_id: guildId, bot_id: botId, config: values, updated_at: new Date().toISOString() },
+       { guild_id: guildId, bot_id: botId, config: runtimeConfig(botId, values), updated_at: new Date().toISOString() },
       { onConflict: 'guild_id,bot_id' },
     )
     .select('updated_at')
@@ -135,7 +137,16 @@ function demoKey(guildId: string, botId: string): string {
 }
 
 function saveDemoConfig(guildId: string, botId: string, values: ConfigValues): void {
-  DEMO_OVERRIDES.set(demoKey(guildId, botId), { ...values });
+  DEMO_OVERRIDES.set(demoKey(guildId, botId), runtimeConfig(botId, values));
+}
+
+function runtimeConfig(botId: string, values: ConfigValues): Record<string, unknown> {
+  if (botId !== 'sanji') return { ...values };
+  const events: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (key.startsWith('events.')) events[key.slice(7)] = value;
+  }
+  return { log_channel: values.log_channel ?? '', events };
 }
 
 /** Read back a demo override, if one was saved this session. */

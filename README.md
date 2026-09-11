@@ -143,7 +143,23 @@ npm run dev -w @eipoint/dashboard
 
 Open `http://localhost:3000`.
 
-### Start a bot
+### Start the local stack
+
+For local production-shaped startup, the launcher reads `temp cred.txt` in memory and never copies its values into PM2 or source files:
+
+```powershell
+npm run check:local
+pm2 start ecosystem.config.cjs
+npm run check:bots
+```
+
+The PM2 map runs the dashboard on port 3000 and the eight bots on ports 3101–3108. Use `pm2 status`, `pm2 logs`, `pm2 restart all`, and `pm2 stop all` for operations. Save the process list only after verifying the local stack:
+
+```powershell
+pm2 save
+```
+
+### Start one bot
 
 ```bash
 npm run dev -w @eiflow/bot-shanks

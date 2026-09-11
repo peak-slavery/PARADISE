@@ -6,6 +6,7 @@ import {
   UserError,
   escapeMentions,
   keys,
+  readBotConfig,
   sanitizeText,
   truncateEmbedText,
   truncateFieldValue,
@@ -122,7 +123,15 @@ export async function runCompletion(ctx: CommandContext, opts: RunCompletionOpti
   const scope = ROUTE_SCOPE[route];
 
   const prompt = readPrompt(ctx);
-  await ctx.defer();
+  await ctx.defer(true);
+  const config = await readBotConfig(ctx.services.supabase, ctx.guildId, ctx.services.env.botId, {
+    cyreneModel: '', assistantModel: '', ephemeral: true,
+  });
+  const routeEnv = {
+    ...ctx.services.env,
+    cyreneModel: config.cyreneModel || ctx.services.env.cyreneModel,
+    assistantModel: config.assistantModel || ctx.services.env.assistantModel,
+  };
 
   if (!ctx.services.isOwner(ctx.userId)) {
     const verdict = await ctx.services.redis
@@ -149,7 +158,7 @@ export async function runCompletion(ctx: CommandContext, opts: RunCompletionOpti
   try {
     result = await ctx.services.queue.run(
       () =>
-        completeWithFallback(createRoute(ctx.services.env, route), messages, {
+        completeWithFallback(createRoute(routeEnv, route), messages, {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           log: ctx.log,
         }),
@@ -179,5 +188,11 @@ export async function runCompletion(ctx: CommandContext, opts: RunCompletionOpti
   // never delay or fail the reply the user is waiting for.
   void appendTurn(ctx, scope, prompt, answer);
 
-  await ctx.replyEmbed(buildAnswerEmbed(ctx, PERSONAS[scope].title, prompt, answer, provider));
+  const embed = buildAnswerEmbed(ctx, PERSONAS[scope].title, prompt, answer, provider);
+  if (config.ephemeral === false) {
+    await ctx.interaction.editReply({ content: 'Answer posted below.' });
+    await ctx.interaction.followUp({ embeds: [embed], ephemeral: false, allowedMentions: { parse: [] } });
+  } else {
+    await ctx.replyEmbed(embed, true);
+  }
 }

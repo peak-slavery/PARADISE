@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { GrandLine } from '@/components/dashboard/GrandLine';
 
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { RevealGroup, RevealItem } from '@/components/motion/Reveal';
@@ -12,9 +13,11 @@ export default async function ServersPage() {
 
   return (
     <>
+      <GrandLine compact />
+      <div id="servers" className="scroll-mt-20" />
       <PageHeader
-        eyebrow="Control plane"
-        title="Your servers"
+        eyebrow="Fleet registry"
+        title="Choose your waters"
         description="Every guild you own that Ei Point is authorized for. Pick one to configure all eight bots, watch its activity stream or review antinuke incidents."
       />
 

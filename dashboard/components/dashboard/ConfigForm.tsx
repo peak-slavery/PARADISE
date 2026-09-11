@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import type { BotMeta } from '@/lib/bot-meta';
 import type { ConfigValues } from '@/lib/types';
@@ -44,7 +44,7 @@ export function ConfigForm({ guildId, bot, initialValues, updatedAt, demo }: Con
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  const baseline = useMemo(() => JSON.stringify(initialValues), [initialValues]);
+  const [baseline, setBaseline] = useState(JSON.stringify(initialValues));
   const dirty = JSON.stringify(values) !== baseline;
 
   function set(key: string, value: string | number | boolean) {
@@ -80,8 +80,11 @@ export function ConfigForm({ guildId, bot, initialValues, updatedAt, demo }: Con
         throw new Error(payload?.error ?? `Request failed (${response.status})`);
       }
 
+      const payload = await response.json() as { config: ConfigValues; updatedAt: string };
+      setValues(payload.config);
+      setBaseline(JSON.stringify(payload.config));
       setState('saved');
-      setSavedAt(new Date().toISOString());
+      setSavedAt(payload.updatedAt);
     } catch (cause) {
       setState('error');
       setError(cause instanceof Error ? cause.message : 'Unknown error');
@@ -115,7 +118,8 @@ export function ConfigForm({ guildId, bot, initialValues, updatedAt, demo }: Con
           </span>
         </header>
 
-        <div className="grid gap-5 p-6 sm:grid-cols-2">
+        <fieldset disabled={state === 'saving'} className="grid gap-5 p-6 sm:grid-cols-2">
+          {bot.fields.length === 0 ? <p className="text-sm leading-relaxed text-ink-soft sm:col-span-2">Use the fleet controls to enable or pause this bot. Its game rules are fixed in the runtime; player commands are listed alongside this panel.</p> : null}
           {bot.fields.map((field) => {
             const id = `${bot.id}-${field.key}`;
             const raw = values[field.key];
@@ -196,7 +200,7 @@ export function ConfigForm({ guildId, bot, initialValues, updatedAt, demo }: Con
                 );
             }
           })}
-        </div>
+        </fieldset>
       </section>
 
       {/* --- Save rail ----------------------------------------------------- */}

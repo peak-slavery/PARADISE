@@ -32,15 +32,15 @@ export default async function GuildConfigPage({
         </Suspense>
       </div>
 
-      <ControlCenter guildId={guildId} />
-
       <ConfigForm
+        key={`${guildId}:${bot.id}`}
         guildId={guildId}
         bot={bot}
         initialValues={values}
         updatedAt={updatedAt}
         demo={demo}
       />
+      <div className="mt-8"><ControlCenter key={guildId} guildId={guildId} /></div>
     </div>
   );
 }

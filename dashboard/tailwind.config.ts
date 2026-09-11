@@ -1,5 +1,7 @@
 import type { Config } from 'tailwindcss';
 
+const token = (name: string) => `color-mix(in srgb, var(${name}) calc(<alpha-value> * 100%), transparent)`;
+
 /**
  * Light-first design system for Ei Point (the Ei Flow bot network).
  *
@@ -22,21 +24,21 @@ const config: Config = {
         // Neomorphic base: a very slightly warm, very light grey. Both the
         // light and dark halves of every extruded shadow derive from it.
         base: {
-          DEFAULT: '#EEF1F6',
-          raised: '#F4F6FA',
-          sunken: '#E4E8F0',
-          line: '#D6DCE7',
+          DEFAULT: token('--pe-bg'),
+          raised: token('--pe-surface-raised'),
+          sunken: token('--pe-surface-sunken'),
+          line: token('--pe-line'),
         },
         ink: {
-          DEFAULT: '#1E2430',
-          soft: '#4A5567',
-          muted: '#6E7A8D',
-          faint: '#9AA5B5',
+          DEFAULT: token('--pe-ink'),
+          soft: token('--pe-ink-soft'),
+          muted: token('--pe-ink-muted'),
+          faint: token('--pe-ink-faint'),
         },
         accent: {
-          DEFAULT: '#5865F2',
-          soft: '#8590F8',
-          ink: '#3B46C4',
+          DEFAULT: token('--pe-accent'),
+          soft: token('--pe-accent-soft'),
+          ink: token('--pe-accent-ink'),
         },
         // Bot brand colours
         bot: {

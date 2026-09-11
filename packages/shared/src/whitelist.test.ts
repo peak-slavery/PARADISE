@@ -28,8 +28,8 @@ describe('whitelist mutations', () => {
 });
 
 describe('config authorization migration', () => {
-  it('requires a positive active whitelist unless legacy access is explicitly allowed', () => {
-    expect(schema).toContain('not p_allow_legacy');
+  it('requires an active whitelist for every bot config write', () => {
+    expect(schema).not.toContain('p_allow_legacy');
     expect(schema).toContain("whitelist_type = 'full'");
     expect(schema).toContain("whitelist_type = 'temp' and expires_at > now()");
   });

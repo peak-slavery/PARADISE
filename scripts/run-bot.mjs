@@ -13,6 +13,7 @@ import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveGroqAutomodKey } from './credential-keys.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const raw = readFileSync(path.join(ROOT, 'temp cred.txt'), 'utf8');
@@ -89,17 +90,29 @@ function buildEnv(botId, port) {
     // leaves the feature disabled, never a boot failure). Parsed in-process,
     // injected straight into the child env, never printed or persisted.
     ...(botId === 'cyrene' && {
-      GROQ_API_KEY: grab(/"gpt oss" = (\S+)/),
-      MISTRAL_API_KEY: grab(/"Ministral 3 8B" = (\S+)/),
-      CYRENE_MODEL: 'openai/gpt-oss-20b',
-      ASSISTANT_MODEL: 'ministral-8b-latest',
+      GROQ_API_KEY: process.env.GROQ_API_KEY || kv('GROQ_API_KEY') || grab(/"gpt oss"\s*=\s*(\S+)/),
+      MISTRAL_API_KEY: process.env.MISTRAL_API_KEY || kv('MISTRAL_API_KEY') || grab(/"Ministral 3 8B"\s*=\s*(\S+)/),
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || kv('GEMINI_API_KEY') || '',
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || kv('OPENROUTER_API_KEY') || '',
+      CYRENE_MODEL: process.env.CYRENE_MODEL || kv('CYRENE_MODEL') || 'openai/gpt-oss-20b',
+      ASSISTANT_MODEL: process.env.ASSISTANT_MODEL || kv('ASSISTANT_MODEL') || 'ministral-8b-latest',
     }),
     ...(botId === 'shanks' && {
-      NVIDIA_NIM_API_KEY: grab(/nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/),
-      CEREBRAS_API_KEY: grab(/"qwen-3\.8-27b" with limit[^=]*= (\S+)/),
+      NVIDIA_NIM_API_KEY: process.env.NVIDIA_NIM_API_KEY || kv('NVIDIA_NIM_API_KEY') || grab(/nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/),
+      CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY || kv('CEREBRAS_API_KEY') || grab(/"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
+      SECURITY_SLM_MODEL: process.env.SECURITY_SLM_MODEL || kv('SECURITY_SLM_MODEL') || 'nvidia/nemotron-3.5-content-safety',
+      SECURITY_SLM_FALLBACK_MODEL: process.env.SECURITY_SLM_FALLBACK_MODEL || kv('SECURITY_SLM_FALLBACK_MODEL') || 'qwen-3.8-27b',
+    }),
+    ...(botId === 'zoro' && {
+      GROQ_AUTOMOD_API_KEY: resolveGroqAutomodKey({
+        explicit: process.env.GROQ_AUTOMOD_API_KEY || kv('GROQ_AUTOMOD_API_KEY'),
+        normal: process.env.GROQ_API_KEY || kv('GROQ_API_KEY') || grab(/"gpt oss"\s*=\s*(\S+)/),
+      }),
     }),
     ...(botId === 'niko-robin' && {
       MODELSCOPE_API_KEY: grab(/modelscope Qwen\/Qwen3\.5-35B-A3B = (\S+)/),
+      BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY || kv('BRAVE_SEARCH_API_KEY') || '',
+      SERPAPI_KEY: process.env.SERPAPI_KEY || kv('SERPAPI_KEY') || '',
     }),
     // Match Render's 512MB free-plan contract: cap the V8 heap so a leak
     // crashes into a visible restart instead of eating the whole machine.

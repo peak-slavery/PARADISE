@@ -31,7 +31,6 @@ const field = (src, key) => {
   const m = src.match(new RegExp(`${key}="?([^\\n"]+?)"?\\s*$`, 'm'));
   return m ? m[1].trim() : null;
 };
-const kv = (key) => field(raw, key);
 
 const BOTS = ['shanks', 'sanji', 'zoro', 'boahancock', 'nami', 'luffy', 'niko-robin', 'cyrene'];
 const HEADERS = {
@@ -63,12 +62,14 @@ function buildEnv(botId) {
 
 const only = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
 const guildScope = process.argv.includes('--guild');
+if (only && !BOTS.includes(only)) throw new Error('Unknown bot id');
 const devGuild = raw.match(/^#dev server=(\d+)/m)?.[1];
 if (guildScope && !devGuild) throw new Error('cred file: #dev server id missing for --guild scope');
 
 let failed = 0;
 for (const botId of BOTS) {
   if (only && botId !== only) continue;
+  try {
   const env = buildEnv(botId);
   const args = ['node_modules/tsx/dist/cli.mjs', `bots/${botId}/scripts/deploy-commands.ts`];
   if (guildScope) args.push(devGuild);
@@ -79,6 +80,10 @@ for (const botId of BOTS) {
   if (r.status !== 0) {
     failed += 1;
     console.log(`  ✗ ${botId} FAILED (exit ${r.status})`);
+  }
+  } catch {
+    failed += 1;
+    console.error(`  ${botId}: registration failed; check its local credentials`);
   }
 }
 if (failed) {

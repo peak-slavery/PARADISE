@@ -71,7 +71,7 @@ export function SiteHeader() {
                 <path d="M12 12.2L4.6 7.2" />
               </svg>
             </span>
-            Ei<span className="text-accent-ink">Point</span>
+             Paradise<span className="text-accent-ink">Engine</span>
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">

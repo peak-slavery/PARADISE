@@ -18,9 +18,10 @@ export interface RecordActionInput {
 // Record<string, unknown>, and interfaces get no implicit index signature.
 export type ModerationConfig = {
   automod_log_channel: string | null;
+  automod_warnings: boolean;
 };
 
-export const DEFAULT_CONFIG: ModerationConfig = { automod_log_channel: null };
+export const DEFAULT_CONFIG: ModerationConfig = { automod_log_channel: null, automod_warnings: true };
 
 /**
  * Writes a moderation record to Supabase (source of truth) and mirrors it to

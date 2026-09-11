@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Ei Point — control plane for the Ei Flow bot network',
+    default: 'Paradise Engine | Grand Line Command Deck',
     template: '%s · Ei Point',
   },
   description:
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#EEF1F6',
+   themeColor: '#f2ecdf',
 };
 
 export default function RootLayout({

@@ -43,3 +43,5 @@ temp cred.txt
 *service-account*.json
 *.pem
 *.p12
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

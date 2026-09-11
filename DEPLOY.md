@@ -53,6 +53,25 @@ browser dev tools must be considered compromised.
 4. The first request that requires Supabase auth will 503 until the schema
    is loaded. That is expected.
 
+## 3.1 Discord sign-in (Supabase Auth provider)
+
+The dashboard's OAuth code (`lib/supabase/{client,server}.ts`, `app/auth/callback`,
+`proxy.ts`) is complete — the last mile is enabling the provider in Supabase:
+
+1. Supabase dashboard → your project → **Authentication → Providers → Discord**
+   → enable. Paste a Discord application's **Client ID** and **Client Secret**
+   (Discord Developer Portal → your app → OAuth2). A dedicated dashboard app is
+   cleaner than reusing a bot's application, but any app works — the scopes the
+   dashboard requests are `identify guilds`.
+2. **Authentication → URL Configuration**: set *Site URL* to the canonical
+   dashboard origin (e.g. `https://ei-point-dashboard.vercel.app`) and add
+   `https://<your-dashboard-origin>/auth/callback` to *Redirect URLs*.
+3. Nothing to deploy: the sign-in button starts working on the next page load.
+
+Without step 1, sign-in fails with `Unsupported provider: provider is not
+enabled` (the provider must be toggled on per project; loading `schema.sql`
+does not configure it).
+
 ## 4. Supabase schema
 
 ```bash
