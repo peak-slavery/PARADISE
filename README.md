@@ -145,15 +145,17 @@ Open `http://localhost:3000`.
 
 ### Start the local stack
 
-For local production-shaped startup, the launcher reads `temp cred.txt` in memory and never copies its values into PM2 or source files:
+For local production-shaped startup, the launcher reads `temp cred.txt` in memory and never copies its values into PM2 or source files. For a bounded test that always cleans up, use:
 
 ```powershell
 npm run check:local
-pm2 start ecosystem.config.cjs
-npm run check:bots
+npm run test:local
+pm2 status
 ```
 
-The PM2 map runs the dashboard on port 3000 and the eight bots on ports 3101–3108. Use `pm2 status`, `pm2 logs`, `pm2 restart all`, and `pm2 stop all` for operations. Save the process list only after verifying the local stack:
+The PM2 map runs the dashboard on port 3000 and the eight bots on ports 3101–3108. Every service has a `500M` memory restart threshold. PM2 on Windows cannot impose a hard `0.1 CPU core` quota; use a Windows Job Object, container, or VM if strict CPU isolation is required. The test runner binds the dashboard and bot health servers to `127.0.0.1`, refuses to start over an existing named service, and removes its nine named services before it exits.
+
+Use `pm2 status`, `pm2 logs`, `pm2 restart all`, and `pm2 stop all` only for deliberately persistent local sessions. Save the process list only after verifying the local stack:
 
 ```powershell
 pm2 save

@@ -9,6 +9,21 @@ afterEach(async () => {
 });
 
 describe('health server bootstrap', () => {
+  it('binds to an explicit loopback host for local-only tests', async () => {
+    const server = await startHealthServer({
+      port: 0,
+      host: '127.0.0.1',
+      botId: 'cyrene',
+      version: '1.0.0',
+      startedAt: Date.now(),
+      log: { info: () => undefined, error: () => undefined } as never,
+    });
+    servers.push(server);
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('health server did not expose an address');
+    expect(address.address).toBe('127.0.0.1');
+  });
+
   it('answers liveness before runtime dependencies are attached', async () => {
     const server = await startHealthServer({
       port: 0,

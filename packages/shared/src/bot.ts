@@ -346,6 +346,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   const bootstrapLog = createLogger(bootstrapEnv);
   const server: HealthServer = await startHealthServer({
     port: bootstrapEnv.port,
+    host: process.env.LOCAL_ONLY === 'true' ? '127.0.0.1' : undefined,
     botId: bootstrapEnv.botId,
     version: bootstrapEnv.botVersion,
     startedAt,

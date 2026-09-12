@@ -8,6 +8,7 @@
 - `npm run check:local -- --providers`: also validate provider authentication using read-only model-list requests.
 - `npm run check:bots`: inspect the local authenticated health endpoints on ports 3101-3108.
 - `pm2 start ecosystem.config.cjs`: start the dashboard and all eight local bot launchers.
+- `npm run test:local`: start a localhost-only PM2 smoke test, probe all nine endpoints, and always remove its named services.
 - `pm2 status` / `pm2 logs`: inspect the PM2 fleet.
 - `pm2 restart all` / `pm2 stop all`: restart or stop the local fleet.
 - `node scripts/run-bot.mjs <botId>`: launch one bot using credentials from `temp cred.txt` in memory.

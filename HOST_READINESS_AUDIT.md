@@ -61,9 +61,12 @@ The checkout began with 30 tracked modifications and new local files from the ac
 - Ran a bounded cold-start smoke test for all eight bots using the existing in-memory credential launcher.
 - Added the GROQ AutoMod credential alias: an explicit `GROQ_AUTOMOD_API_KEY` wins, otherwise the normal `GROQ_API_KEY` is reused.
 - Added a secret-free PM2 ecosystem for the dashboard and all eight bots, plus fleet operator commands.
-- Started the nine-service PM2 stack and verified stable online status with zero restarts.
+- Added a 500MB PM2 memory restart threshold and `LOCAL_ONLY=true` loopback binding for the local test profile.
+- Added `npm run test:local`, which refuses to overwrite an existing named service and cleans up its nine named services in a finally path.
+- Documented that PM2 on Windows cannot hard-enforce a 0.1 CPU-core quota; strict CPU isolation requires a Job Object, container, or VM.
+- Started the nine-service PM2 stack during the earlier smoke test and verified stable online status with zero restarts; the stack was subsequently stopped and deleted by exact service name.
 - Added no credentials to files or command output.
-- GitHub commit/push is pending the final staged diff review.
+- The new runner was syntax/config-validated; its live rerun was interrupted before startup after a Windows PM2 shim issue was fixed.
 
 ## After-work snapshot
 

@@ -16,6 +16,8 @@
 
 Credentials remain in the gitignored `temp cred.txt` and are loaded in memory by the existing launchers. PM2 never receives credential values from this file.
 
+Each local service has `max_memory_restart: '500M'`. The requested `0.1 CPU core` target cannot be hard-enforced by PM2 on Windows; use a Windows Job Object, container, or VM if a strict CPU quota is required.
+
 ```powershell
 pm2 start ecosystem.config.cjs   # First time
 pm2 start all                     # After first time
@@ -26,6 +28,7 @@ pm2 logs
 pm2 monit
 pm2 save                         # Save the verified process list
 pm2 resurrect                     # Restore the saved list
+npm run test:local                # Start, probe localhost, and always clean up
 ```
 
-Use `npm run check:bots` after startup. A healthy local liveness response is HTTP 200; `status=degraded` means the process is alive but one or more backing services are unavailable or not ready.
+`npm run test:local` refuses to start if one of its named services already exists, runs only against localhost, and deletes its nine test services in cleanup. Verify `pm2 status` is empty afterward.

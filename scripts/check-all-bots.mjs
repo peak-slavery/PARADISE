@@ -33,7 +33,7 @@ const BOTS = [
 let down = 0;
 let overBudget = 0;
 let totalRam = 0;
-const RAM_BUDGET_MB = 512; // Render free plan per-service limit
+const RAM_BUDGET_MB = 500; // Local PM2 restart ceiling and Render per-service target
 for (const [id, header, port] of BOTS) {
   const tok = section(`^${header}\\b`).match(/- HEALTH_TOKEN=(\S+)/)?.[1];
   let line = `${id}: `;

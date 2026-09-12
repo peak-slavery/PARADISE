@@ -16,7 +16,7 @@ env.MONGODB_DB ||= 'eiflow';
 env.NEXT_PUBLIC_SITE_URL = 'http://localhost:3000';
 env.DEV_GUILD_ID ||= raw.match(/^#dev server=(\d+)/m)?.[1] ?? '';
 env.MAIN_GUILD_ID ||= raw.match(/^#main server=(\d+)/m)?.[1] ?? '';
-const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', 'dashboard'], { cwd: root, env, stdio: 'inherit' });
+const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', 'dashboard', '--hostname', '127.0.0.1'], { cwd: root, env, stdio: 'inherit' });
 child.on('exit', (code) => { process.exitCode = code ?? 1; });
 process.on('SIGINT', () => child.kill('SIGTERM'));
 process.on('SIGTERM', () => child.kill('SIGTERM'));

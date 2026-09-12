@@ -20,6 +20,7 @@ export interface HealthDeps {
 
 export interface HealthBindOptions {
   port: number;
+  host?: string;
   botId: string;
   version: string;
   startedAt: number;
@@ -175,7 +176,7 @@ export function startHealthServer(options: HealthBindOptions): Promise<HealthSer
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.port, '0.0.0.0', () => {
+    server.listen(options.port, options.host ?? '0.0.0.0', () => {
       options.log.info({ port: options.port }, 'health server listening');
       resolve(healthServer);
     });
