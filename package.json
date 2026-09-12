@@ -40,11 +40,11 @@
     "start:ai": "npm run dev -w @eiflow/bot-cyrene"
   },
   "devDependencies": {
-    "@types/node": "^22.7.5",
-    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@types/node": "^26.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.8.1",
-    "eslint": "^9.13.0",
-    "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "eslint": "^10.10.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
   }
 }

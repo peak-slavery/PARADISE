@@ -16,9 +16,9 @@
     "discord.js": "^14.15.3"
   },
   "devDependencies": {
-    "@types/node": "^22.7.5",
+    "@types/node": "^26.5.0",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
   }
 }
