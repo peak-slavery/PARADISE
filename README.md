@@ -177,7 +177,31 @@ Run database initialization with privileged credentials kept in your secret mana
 
 ```bash
 psql "$SUPABASE_DB_URL" -f infra/supabase/schema.sql
+node scripts/apply-supabase-migrations.mjs --database-url="$SUPABASE_DB_URL"
 mongosh "$MONGODB_URI" infra/mongo/init.js
+```
+
+Use the schema file only for a fresh database. The Node migration runner records
+completed files in `private.schema_migrations`, validates order, and applies each
+pending migration transactionally. Mark an already-initialized database once with
+`--baseline=0001_baseline.sql`; future migrations then apply without re-running the
+baseline.
+
+### Restore drill
+
+The scheduled restore workflow exports a bounded Mongo batch, restores it into a
+temporary isolated collection, verifies document parity and indexes, and always
+cleans up. Configure the `restore-drill` GitHub environment with
+`RESTORE_MONGODB_URI` and optional `RESTORE_MONGODB_DB`; use a dedicated
+read/write staging database rather than production where practical.
+
+After the first dashboard owner signs in once, provision that Supabase user as
+the initial master through a service/admin database connection. The UUID is
+supplied at runtime and is intentionally absent from Git:
+
+```powershell
+$env:MASTER_USER_ID = "<supabase-user-uuid>"
+psql "$env:SUPABASE_DB_URL" -v master_user_id="$env:MASTER_USER_ID" -f infra/supabase/bootstrap-master.sql
 ```
 
 ## Environment contract
@@ -240,9 +264,51 @@ The shared security suite covers HMAC freshness and tamper detection, fail-close
 - Never expose Vite, Vitest UI, or development servers to untrusted networks.
 - Rotate credentials if deployment history or external logs may have exposed them.
 
-## Known risk
+### Release gate
 
-The current Next.js 15 release resolves the public Next.js runtime advisories addressed by the 15.5 line. npm still reports a nested PostCSS advisory because Next 15 bundles an older internal PostCSS version; removing that final advisory requires a larger Next.js 16 migration and separate compatibility work. The issue is limited to the build/tooling dependency path in this project and is not hidden by a forced upgrade.
+The canonical promotion sequence is:
+
+1. Commit to a release candidate ref.
+2. CI runs typecheck, lint, tests, build, audit, CodeQL, dependency review, and secret scan.
+3. An operator manually dispatches `Release gate` against the approved `production-release` environment.
+4. The gate repeats local validation and runs live production smoke.
+5. Only after both jobs pass, promote Supabase migrations, dashboard deployment, and independent bot deployments.
+6. Roll back the affected service and restore the matching database migration snapshot if any promotion step fails.
+
+Before restoring a database snapshot, run:
+
+```powershell
+npm run drill:rollback -- --target=0001
+```
+
+The command resolves the exact migration, lists every later migration whose
+checksum must be reverted from the snapshot, and fails on an unknown target.
+
+### Monitoring and incidents
+
+The `Production monitor` workflow runs every six hours and fails on any
+degraded service, restart loop, or unavailable Supabase/Mongo/Redis dependency.
+The dashboard uses `DASHBOARD_HEALTH_TOKEN`; all eight bot services use
+`HEALTH_TOKEN`. Both are required only for authenticated
+readiness diagnostics.
+The weekly quota workflow alerts at 80% free-tier usage, and the restore drill
+runs weekly. Investigate the named service, retain the failed workflow log,
+check recent deployments and database migrations, roll back the affected
+service, then rerun production smoke before closing the incident.
+
+Run `npm run smoke:production` against an isolated production-shaped
+environment before promotion. It requires the dashboard URL, service-role
+Supabase credentials, Mongo and Redis connections, the complete per-bot
+`HMAC_SECRETS_JSON` map, and a health URL for each of the eight bots.
+The health token must be the trusted shared diagnostic token used by the bot
+services; public health responses intentionally omit dependency details.
+
+## Dependency posture
+
+The dashboard builds with the locked Next.js 16.3.5 runtime. The security gates
+include `npm audit`, CodeQL, dependency review, and Git history secret scanning;
+they must pass before promotion. Dependency changes are updated in focused
+groups rather than as one broad upgrade.
 
 ## License
 

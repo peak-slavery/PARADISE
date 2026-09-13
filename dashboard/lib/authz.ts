@@ -9,7 +9,7 @@
 import { notFound, redirect } from 'next/navigation';
 
 import { getServer } from '@/lib/data/servers';
-import { credentials } from '@/lib/demo';
+import { credentials, demoMode } from '@/lib/demo';
 import { createSupabaseServerClient, getCurrentUser } from '@/lib/supabase/server';
 
 /** Discord snowflakes are 17–20 digit numeric strings. */
@@ -51,6 +51,9 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
   }
 
   const status = credentials();
+  if (!demoMode() && (!status.supabase || !status.mongo)) {
+    return { ok: false, status: 503, error: 'Dashboard backend is not configured' };
+  }
   if (!status.supabase || !status.mongo) {
     return hasConfiguredEnvironment()
       ? { ok: false, status: 503, error: 'Dashboard backend is not configured' }
@@ -106,19 +109,12 @@ export async function authorizeMaster(): Promise<MasterAuthorization> {
     return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('discord_id,is_master')
-    .eq('id', user.id)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('is_master_user');
   if (error) return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
+  if (data !== true) return { ok: false, status: 403, error: 'Master access required' };
 
-  const masterDiscordId = process.env.MASTER_DISCORD_ID?.trim();
-  if (data?.is_master === true || (Boolean(masterDiscordId) && data?.discord_id === masterDiscordId)) {
-    return { ok: true, userId: user.id, source: 'database' };
-  }
+  return { ok: true, userId: user.id, source: 'database' };
 
-  return { ok: false, status: 403, error: 'Master access required' };
 }
 
 export async function authorizeGuildOrMaster(guildId: string): Promise<GuildAuthorization & { master?: boolean }> {

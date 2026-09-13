@@ -1,5 +1,5 @@
 import { PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
-import { formatDuration, MAX_TIMEOUT_SECONDS, parseDuration, requirePermission, UserError, type CommandModule } from '@eiflow/shared';
+import { formatDuration, MAX_TIMEOUT_SECONDS, parseDuration, requireBotPermission, requirePermission, UserError, type CommandModule } from '@eiflow/shared';
 import { assertModeratable, notifyTarget, recordAction } from '../lib/store.js';
 
 export const data = new SlashCommandBuilder()
@@ -17,6 +17,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Promise<void> {
   const target = ctx.targetUser();
   requirePermission(ctx, PermissionFlagsBits.ModerateMembers, 'Moderate Members');
+  requireBotPermission(ctx, PermissionFlagsBits.ModerateMembers, 'Moderate Members');
   const member = ctx.targetMember();
   if (!member) throw new UserError('That user is not in this server.');
 

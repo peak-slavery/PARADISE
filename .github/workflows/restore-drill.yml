@@ -1,0 +1,26 @@
+name: Restore drill
+
+on:
+  schedule:
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mongo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: restore-drill
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run drill:restore
+        env:
+          MONGODB_URI: ${{ secrets.RESTORE_MONGODB_URI }}
+          MONGODB_DB: ${{ vars.RESTORE_MONGODB_DB || 'eiflow' }}

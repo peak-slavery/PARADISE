@@ -2,6 +2,8 @@
 // Never import from a `'use client'` file.
 
 import { credentials, demoSecurityEvents } from '../demo';
+import { demoMode } from '../demo';
+import { fetchUnavailable } from './unavailable';
 import { createSupabaseServerClient } from '../supabase/server';
 import type { SecurityEventRow, SecuritySeverity } from '../types';
 
@@ -25,12 +27,14 @@ export async function fetchSecurityEvents(
   const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
 
   if (!credentials().supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     const events = demoSecurityEvents(guildId);
     return { events: filterSeverity(events, query.severity).slice(0, limit), demo: true };
   }
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     const events = demoSecurityEvents(guildId);
     return { events: filterSeverity(events, query.severity).slice(0, limit), demo: true };
   }

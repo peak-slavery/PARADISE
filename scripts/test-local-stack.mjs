@@ -18,6 +18,7 @@ const services = [
 const ports = [3000, 3101, 3102, 3103, 3104, 3105, 3106, 3107, 3108];
 const timeoutMs = 90_000;
 const pollMs = 1_000;
+const requestTimeoutMs = Math.min(30_000, timeoutMs);
 
 function run(args, options = {}) {
   return execFileSync(pm2, args, {
@@ -38,6 +39,13 @@ function currentNames() {
   }
 }
 
+function localServiceSummary() {
+  const rows = JSON.parse(run(['jlist']));
+  return rows
+    .filter((row) => services.includes(row.name))
+    .map((row) => ({ name: row.name, status: row.pm2_env?.status, pid: row.pid }));
+}
+
 function cleanup() {
   try {
     run(['delete', ...services], { stdio: 'inherit' });
@@ -55,7 +63,7 @@ async function waitFor(url) {
   let lastError = 'not ready';
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
       if (response.ok) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
@@ -76,7 +84,7 @@ try {
   run(['start', 'ecosystem.config.cjs'], { stdio: 'inherit' });
   await waitFor('http://127.0.0.1:3000/');
   for (const port of ports.slice(1)) await waitFor(`http://127.0.0.1:${port}/health`);
-  run(['jlist'], { stdio: 'inherit' });
+  console.log(JSON.stringify(localServiceSummary(), null, 2));
   console.log('Local PM2 smoke test passed. Services are localhost-only test processes.');
 } catch (error) {
   process.exitCode = 1;

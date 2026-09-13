@@ -21,3 +21,19 @@ export function requirePermission(
 export function requireManageGuild(ctx: CommandContext): void {
   requirePermission(ctx, PermissionFlagsBits.ManageGuild, 'Manage Server');
 }
+
+/**
+ * Verify the bot's live permission before a destructive call. A controlled
+ * failure here prevents partial execution when Discord UI state is stale.
+ */
+export function requireBotPermission(
+  ctx: CommandContext,
+  permission: PermissionResolvable,
+  label: string,
+): void {
+  const guild = ctx.interaction.guild;
+  if (!guild) throw new UserError('This command can only be used inside a server.');
+  if (!guild.members.me?.permissions.has(permission)) {
+    throw new UserError(`I need the "${label}" permission to do that.`);
+  }
+}

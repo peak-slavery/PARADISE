@@ -107,3 +107,82 @@ jobs:
       - run: npm run build -w @eipoint/dashboard
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'
+
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+
+  secret-scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan Git history for credential patterns
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  production-smoke:
+    name: production smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && vars.PRODUCTION_SMOKE_ENABLED == 'true'
+    permissions:
+      contents: read
+    environment: production-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run smoke:production
+        env:
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ vars.MONGODB_DB || 'eiflow' }}
+          UPSTASH_REDIS_REST_URL: ${{ vars.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          HMAC_SECRETS_JSON: ${{ secrets.HMAC_SECRETS_JSON }}
+          DASHBOARD_HEALTH_TOKEN: ${{ secrets.DASHBOARD_HEALTH_TOKEN }}
+          HEALTH_TOKEN: ${{ secrets.HEALTH_TOKEN }}
+          SMOKE_BOT_ID: ${{ vars.SMOKE_BOT_ID }}
+          SHANKS_URL: ${{ vars.SHANKS_URL }}
+          SANJI_URL: ${{ vars.SANJI_URL }}
+          ZORO_URL: ${{ vars.ZORO_URL }}
+          BOAHANCOCK_URL: ${{ vars.BOAHANCOCK_URL }}
+          NAMI_URL: ${{ vars.NAMI_URL }}
+          LUFFY_URL: ${{ vars.LUFFY_URL }}
+          NIKO_ROBIN_URL: ${{ vars.NIKO_ROBIN_URL }}
+          CYRENE_URL: ${{ vars.CYRENE_URL }}

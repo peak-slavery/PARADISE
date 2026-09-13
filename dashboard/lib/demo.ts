@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
 // Demo mode
 //
-// The dashboard must be renderable with zero credentials. When any of
-// NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / MONGODB_URI are
-// absent, the data accessors in this folder fall back to the fixtures below
-// instead of opening a connection. This is the *only* place fixtures live.
+// The dashboard must be renderable with zero credentials for local UI work.
+// Synthetic data is enabled only by an explicit DEMO_MODE=true opt-in. A
+// production deployment with missing backends must fail closed, never present
+// fixtures as operational data.
 //
 // Everything here is server-side. `demoMode()` is safe to call from a server
 // component to render a "demo data" banner.
@@ -21,11 +21,38 @@ import type {
 
 export type Backend = 'supabase' | 'mongo' | 'hmac';
 
+export function productionMode(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+export function assertDashboardProductionEnvironment(): void {
+  if (!productionMode()) return;
+  if (process.env.DEMO_MODE !== 'false') {
+    throw new Error('DEMO_MODE must be explicitly false in production');
+  }
+  const required = [
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'MONGODB_URI',
+    'MONGODB_DB',
+    'SECRET_VAULT_MASTER_KEY',
+    'SECRET_VAULT_SALT',
+    'HMAC_SECRETS_JSON',
+    'NEXT_PUBLIC_SITE_URL',
+    'DASHBOARD_URL',
+  ];
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (missing.length > 0) {
+    throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
+  }
+}
+
 export interface CredentialStatus {
   supabase: boolean;
   mongo: boolean;
   hmac: boolean;
-  /** True when at least one store is unconfigured and fixtures are in use. */
+  /** True when fixtures are currently permitted and that store is unconfigured. */
   demo: boolean;
 }
 
@@ -45,17 +72,20 @@ export function credentials(): CredentialStatus {
     present(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const mongo = present(process.env.MONGODB_URI);
   const hmac = present(process.env.HMAC_SECRET) || present(process.env.HMAC_SECRETS_JSON);
-  return { supabase, mongo, hmac, demo: !supabase || !mongo };
+  const demo = process.env.DEMO_MODE === 'true';
+  return { supabase, mongo, hmac, demo };
 }
 
 /** True when fixtures are being served for any part of the app. */
 export function demoMode(): boolean {
-  return credentials().demo;
+  assertDashboardProductionEnvironment();
+  return process.env.DEMO_MODE === 'true';
 }
 
 /** True when fixtures would be used for the named backend. */
 export function useFixtures(backend: Backend): boolean {
   const status = credentials();
+  if (!status.demo) return false;
   if (backend === 'supabase') return !status.supabase;
   if (backend === 'mongo') return !status.mongo;
   return !status.hmac;

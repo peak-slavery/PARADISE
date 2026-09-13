@@ -1,9 +1,18 @@
 // Read credentials only in-process. Output contains readiness, never values.
 import { readFileSync } from 'node:fs';
 import { resolveCredential } from './credential-keys.mjs';
+import { reportMongoReadiness } from './mongo-readiness.mjs';
 
 const raw = readFileSync(new URL('../temp cred.txt', import.meta.url), 'utf8');
 const field = (key) => process.env[key]?.trim() || raw.match(new RegExp(`(?:^|\\n)(?:- )?${key}\\s*=\\s*"?([^"\\r\\n]+)`, 'i'))?.[1]?.trim();
+function credentialSection(header) {
+  const match = raw.match(new RegExp(`#\\s*${header}`, 'm'));
+  if (!match) return '';
+  const rest = raw.slice(match.index + match[0].length);
+  const next = rest.search(/^#/m);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+const sectionField = (header, key) => credentialSection(header).match(new RegExp(`${key}="?([^\\n"]+?)"?\\s*$`, 'm'))?.[1]?.trim();
 const credential = (name, descriptive) => resolveCredential({ raw, name, environment: process.env[name], descriptive });
 const providers = {
   GROQ_API_KEY: credential('GROQ_API_KEY', /"gpt oss"\s*=\s*(\S+)/),
@@ -12,6 +21,11 @@ const providers = {
   CEREBRAS_API_KEY: credential('CEREBRAS_API_KEY', /"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
 };
 for (const [name, value] of Object.entries(providers)) console.log(`${name}: ${value ? 'present' : 'missing'}`);
+
+const mongoDns = await Promise.all([
+  reportMongoReadiness('Primary Mongo', field('MONGODB_URI') || sectionField('primary mongo db', 'connection string')),
+  reportMongoReadiness('Secondary Mongo', field('MONGODB_SECONDARY_URI') || sectionField('mongodb 2', 'connection string')),
+]);
 
 const url = field('NEXT_PUBLIC_SUPABASE_URL');
 const key = field('NEXT_PUBLIC_SUPABASE_ANON_KEY');
@@ -47,3 +61,5 @@ if (process.argv.includes('--providers')) {
     } catch { console.log(`${name} provider authentication: unreachable`); }
   }
 }
+
+if (mongoDns.includes(false)) process.exitCode = 1;

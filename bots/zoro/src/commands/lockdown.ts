@@ -1,5 +1,5 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { UserError, type CommandModule } from '@eiflow/shared';
+import { PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { UserError, requireBotPermission, type CommandModule } from '@eiflow/shared';
 import { assertManager } from '../lib/store.js';
 import { applyLockdown, liftLockdown } from '../lib/lockdown.js';
 
@@ -14,6 +14,7 @@ export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Pro
 
   const guild = ctx.interaction.guild;
   if (!guild) throw new UserError('This command must be used inside a server.');
+  requireBotPermission(ctx, PermissionFlagsBits.ManageChannels, 'Manage Channels');
 
   await ctx.defer(false);
 

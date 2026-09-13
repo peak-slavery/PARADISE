@@ -2,8 +2,10 @@
 // Never import from a `'use client'` file.
 
 import { demoLogs } from '../demo';
+import { demoMode } from '../demo';
 import { getMongoDb } from '../mongo';
 import type { LogEntry, LogLevel, LogPage } from '../types';
+import { fetchUnavailable } from './unavailable';
 
 export const LOG_COLLECTION = 'logs';
 
@@ -36,6 +38,7 @@ export async function fetchLogs(guildId: string, query: LogQuery = {}): Promise<
 
   const db = await getMongoDb();
   if (!db) {
+    if (!demoMode()) throw fetchUnavailable();
     const entries = demoLogs(guildId, { limit, level, botId: query.botId, since });
     return {
       entries,

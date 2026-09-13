@@ -96,6 +96,97 @@ try {
     for (const m of perServiceErrors) bad(m);
   }
 
+  if (/1479589523426902208/.test(yaml)) {
+    bad('render.yaml contains a hardcoded privileged operator ID');
+  } else {
+    ok('render.yaml contains no hardcoded privileged operator ID');
+  }
+
+  const schema = read('infra/supabase/schema.sql');
+  if (/1479589523426902208/.test(schema)) {
+    bad('Supabase schema contains a hardcoded privileged operator ID');
+  } else if (!/create table if not exists public\.admin_users/.test(schema)) {
+    bad('Supabase schema is missing the admin_users role table');
+  } else {
+    ok('Supabase master authorization is database-provisioned');
+  }
+  if (!/alter table public\.admin_users add column if not exists updated_at/.test(schema)) {
+    bad('admin_users is missing the updated_at column used by master bootstrap');
+  } else {
+    ok('admin_users schema supports the master bootstrap update');
+  }
+
+  const bootstrap = read('infra/supabase/bootstrap-master.sql');
+  const authz = read('dashboard/lib/authz.ts');
+  if (/<[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}>/i.test(bootstrap)) {
+    bad('bootstrap-master.sql contains a hardcoded master UUID');
+  } else {
+    ok('bootstrap-master.sql requires a runtime-supplied master UUID');
+  }
+  if (!/from\('admin_users'\)/.test(authz) && /rpc\('is_master_user'\)/.test(authz)) {
+    ok('dashboard master authorization uses the protected is_master_user RPC');
+  } else {
+    bad('dashboard master authorization must use the is_master_user RPC without reading admin_users directly');
+  }
+
+  const mongoInit = read('infra/mongo/init.js');
+  const mongoIndexes = read('infra/mongo/indexes.cjs');
+  if (/ai_ctx_updated/.test(mongoInit) || /ai_ctx_updated/.test(mongoIndexes)) {
+    bad('Mongo bootstrap defines the conflicting ai_ctx_updated index');
+  } else if (!/ai_ctx_ttl/.test(mongoIndexes) || !/require\('\.\/indexes\.cjs'\)/.test(mongoInit)) {
+    bad('Mongo bootstrap does not use the canonical index contract');
+  } else {
+    ok('Mongo bootstrap uses the canonical shared index contract');
+  }
+
+  const productionSmoke = read('scripts/production-smoke.mjs');
+  if (!/for \(const name of requiredEnvironment\)/.test(productionSmoke)) {
+    bad('production smoke script does not fail fast on missing environment contracts');
+  } else {
+    ok('production smoke script enforces its environment contract');
+  }
+  if (/stale, tampered, and cross-bot requests rejected/.test(productionSmoke)) {
+    ok('production smoke rejects stale, tampered, and cross-bot HMAC requests');
+  } else {
+    bad('production smoke must reject stale, tampered, and cross-bot HMAC requests');
+  }
+
+  const dashboardHealth = read('dashboard/app/api/health/route.ts');
+  if (!/process\.env\.DASHBOARD_HEALTH_TOKEN/.test(dashboardHealth) || !/status: status === 'ok' \? 200 : 503/.test(dashboardHealth) || !/process\.env\.DASHBOARD_HEALTH_TOKEN/.test(productionSmoke)) {
+    bad('dashboard health route is not protected or readiness-aware');
+  } else {
+    ok('dashboard health route is protected and readiness-aware');
+  }
+
+  const migrationRunner = read('scripts/apply-supabase-migrations.mjs');
+  const migrationFiles = list('infra/supabase/migrations')
+    .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/.test(name))
+    .sort();
+  if (
+    migrationFiles.length === 0 ||
+    !/private\.schema_migrations/.test(migrationRunner) ||
+    !/'-1'/.test(migrationRunner) ||
+    !/ON_ERROR_STOP=1/.test(migrationRunner)
+  ) {
+    bad('Supabase migration runner is not deterministic or transactional');
+  } else {
+    ok(`Supabase migration runner is transactional (${migrationFiles.length} migration)`);
+  }
+
+  const restoreDrill = read('scripts/restore-drill.mjs');
+  if (!/restore_drill_\$\{Date\.now\(\)\}/.test(restoreDrill) || !/listIndexes\(\)/.test(restoreDrill)) {
+    bad('Mongo restore drill does not verify isolation and index recovery');
+  } else {
+    ok('Mongo restore drill verifies isolated restore and indexes');
+  }
+
+  const rollbackDrill = read('scripts/rollback-drill.mjs');
+  if (!/--target=/.test(rollbackDrill) || !/private\.schema_migrations/.test(rollbackDrill)) {
+    bad('rollback drill does not verify a target or migration ledger');
+  } else {
+    ok('rollback drill validates the migration rollback target');
+  }
+
   const serviceBlock = (name) => {
     const start = yaml.indexOf(`  - name: ${name}`);
     if (start < 0) return '';
@@ -162,7 +253,7 @@ const bots = list('bots').filter((d) => isDir(path.join('bots', d)));
 if (bots.length !== 8) bad(`expected 8 bots, found ${bots.length}`);
 else ok(`8 bots in bots/ (${bots.join(', ')})`);
 
-const requiredScripts = { start: 'tsx src/index.ts', 'deploy:commands': 'tsx scripts/deploy-commands.ts' };
+  const requiredScripts = { start: 'tsx src/index.ts', 'deploy:commands': 'tsx scripts/deploy-commands.ts' };
 for (const bot of bots) {
   try {
     const pkg = JSON.parse(read(`bots/${bot}/package.json`));
@@ -190,8 +281,25 @@ for (const bot of bots) {
   } catch (e) {
     bad(`bots/${bot}: ${e.message}`);
   }
-}
-ok('all 8 bot packages have start, deploy:commands, and required files');
+  }
+  ok('all 8 bot packages have start, deploy:commands, and required files');
+
+  const sensitiveCommands = [
+    ['bots/shanks/src/commands/ban.ts', 'requirePermission(ctx, PermissionFlagsBits.BanMembers'],
+    ['bots/shanks/src/commands/mute.ts', 'requirePermission(ctx, PermissionFlagsBits.ModerateMembers'],
+    ['bots/shanks/src/commands/purge.ts', 'requirePermission(ctx, PermissionFlagsBits.ManageMessages'],
+    ['bots/zoro/src/commands/antinuke.ts', 'requireManageGuild(ctx)'],
+    ['bots/zoro/src/commands/lockdown.ts', 'assertManager(ctx)'],
+    ['bots/zoro/src/commands/whitelist.ts', 'requireManageGuild(ctx)'],
+  ];
+  const missingExecutionPermissions = sensitiveCommands
+    .filter(([file, assertion]) => !read(file).includes(assertion))
+    .map(([file]) => `${file} lacks execution-time permission enforcement`);
+  if (missingExecutionPermissions.length === 0) {
+    ok('sensitive commands enforce caller permissions at execution time');
+  } else {
+    for (const message of missingExecutionPermissions) bad(message);
+  }
 
 // ---------------------------------------------------------------------------
 console.log('\x1b[1m[3/5] dashboard bundle\x1b[0m');
@@ -251,7 +359,18 @@ console.log('\x1b[1m[5/5] lockfile + .env.example coherence\x1b[0m');
 if (!exists('package-lock.json')) {
   bad('package-lock.json missing — run npm install locally first');
 } else {
-  ok('package-lock.json present');
+  try {
+    const lockfile = JSON.parse(read('package-lock.json'));
+    if (lockfile.lockfileVersion !== 3) {
+      bad(`package-lock.json has unsupported lockfileVersion ${lockfile.lockfileVersion}`);
+    } else if (lockfile.name !== 'eiflow' || !lockfile.packages?.['']) {
+      bad('package-lock.json root metadata is missing or invalid');
+    } else {
+      ok('package-lock.json present with valid root metadata');
+    }
+  } catch (e) {
+    bad(`package-lock.json is invalid JSON: ${e.message}`);
+  }
 }
 if (!exists('.env.example')) bad('root .env.example missing');
 else ok('root .env.example present');

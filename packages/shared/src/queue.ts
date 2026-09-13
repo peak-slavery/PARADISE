@@ -66,18 +66,26 @@ export class TaskQueue {
     await this.acquire();
     const timeout = opts.timeoutMs ?? this.timeoutMs;
     let timer: NodeJS.Timeout | undefined;
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
+      this.release();
+    };
     const taskPromise = Promise.resolve().then(task);
-    const trackedTask = taskPromise.finally(() => this.release());
+    taskPromise.then(releaseOnce, releaseOnce);
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new QueueTimeoutError(timeout)), timeout);
       timer.unref?.();
     });
 
     try {
-      // Stop waiting at the deadline, but retain the slot until the underlying
-      // task settles so timeouts cannot exceed the concurrency limit.
-      return await Promise.race([trackedTask, timeoutPromise]);
+      // The deadline releases the slot immediately. The underlying task still
+      // has a no-op rejection handler so a late failure cannot become an
+      // unhandled rejection or release the slot a second time.
+      return await Promise.race([taskPromise, timeoutPromise]);
     } finally {
+      releaseOnce();
       if (timer) clearTimeout(timer);
     }
   }

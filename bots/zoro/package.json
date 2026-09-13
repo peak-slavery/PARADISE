@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "deploy:commands": "tsx scripts/deploy-commands.ts"
   },
   "dependencies": {

@@ -3,6 +3,8 @@
 
 import { DEMO_USER, demoServer, demoServers } from '../demo';
 import { createSupabaseServerClient } from '../supabase/server';
+import { demoMode } from '../demo';
+import { fetchUnavailable } from './unavailable';
 import type { ServerRow, UserRow } from '../types';
 
 export interface ServersResult {
@@ -20,6 +22,7 @@ export interface ServersResult {
 export async function getServers(): Promise<ServersResult> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     return { servers: demoServers(), demo: true };
   }
 
@@ -39,6 +42,7 @@ export async function getServers(): Promise<ServersResult> {
 export async function getServer(guildId: string): Promise<ServerRow | null> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
+    if (!demoMode()) return null;
     return demoServer(guildId);
   }
 
@@ -56,6 +60,7 @@ export async function getServer(guildId: string): Promise<ServerRow | null> {
 export async function getProfile(): Promise<{ user: UserRow; demo: boolean } | null> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
+    if (!demoMode()) return null;
     return { user: DEMO_USER, demo: true };
   }
 

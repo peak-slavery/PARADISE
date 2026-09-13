@@ -1,4 +1,9 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
+import {
+  MONGO_INDEXES,
+  secondaryMongoIndexes,
+} from './mongo-indexes.js';
+export { AI_CONTEXT_TTL_SECONDS, LOG_TTL_SECONDS } from './mongo-indexes.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 
@@ -83,16 +88,6 @@ export interface MongoHandle {
   collections: MongoCollections;
 }
 
-/** Retention policy — every high-write collection is bounded. */
-export const LOG_TTL_SECONDS = 60 * 60 * 24 * 60; // 60 days
-
-/**
- * AI conversation turns contain whatever a member typed — potentially personal
- * data or secrets pasted into a prompt. They are only useful for short-range
- * context, so they expire well before the log TTL.
- */
-export const AI_CONTEXT_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
-
 /**
  * Production Mongo credentials must opt into encrypted transport. Atlas SRV
  * URIs use TLS by default; a standard mongodb:// URI must explicitly request
@@ -130,19 +125,9 @@ export function buildCollections(db: Db): MongoCollections {
  * index creation requests that match an existing index.
  */
 export async function ensureIndexes(collections: MongoCollections): Promise<void> {
-  await Promise.all([
-    collections.logs.createIndex({ guild_id: 1, created_at: -1 }),
-    collections.logs.createIndex({ created_at: 1 }, { expireAfterSeconds: LOG_TTL_SECONDS }),
-    collections.xp.createIndex({ guild_id: 1, user_id: 1 }, { unique: true }),
-    collections.xp.createIndex({ guild_id: 1, xp: -1 }),
-    collections.card_games.createIndex({ guild_id: 1, user_id: 1 }, { unique: true }),
-    collections.inventories.createIndex({ guild_id: 1, user_id: 1 }, { unique: true }),
-    collections.ai_context.createIndex({ guild_id: 1, user_id: 1, scope: 1 }, { unique: true }),
-    collections.ai_context.createIndex(
-      { updated_at: 1 },
-      { name: 'ai_ctx_ttl', expireAfterSeconds: AI_CONTEXT_TTL_SECONDS },
-    ),
-  ]);
+  await Promise.all(MONGO_INDEXES.map(async (index) => {
+    await collections[index.collection].createIndex(index.key, { name: index.name, ...index.options });
+  }));
 }
 
 /**
@@ -185,7 +170,9 @@ export async function connectMongo(env: Env, log: Logger): Promise<MongoHandle |
     try {
       await ensureIndexes(collections);
     } catch (err) {
-      log.error({ err }, 'mongodb index bootstrap failed — continuing with an unindexed database');
+      await client.close().catch(() => undefined);
+      log.error({ err }, 'mongodb index bootstrap failed — database not ready');
+      return null;
     }
     log.info({ db: env.mongodbDb }, 'mongodb connected');
     return { client, db, collections };
@@ -232,10 +219,13 @@ export async function connectSecondaryMongo(env: Env, log: Logger): Promise<Mong
     const db = client.db(env.mongodbSecondaryDb);
     const collections = buildCollections(db);
     try {
-      await collections.logs.createIndex({ guild_id: 1, created_at: -1 });
-      await collections.logs.createIndex({ created_at: 1 }, { expireAfterSeconds: LOG_TTL_SECONDS });
+      await Promise.all(secondaryMongoIndexes().map(async (index) => {
+        await collections.logs.createIndex(index.key, { name: index.name, ...index.options });
+      }));
     } catch (err) {
-      log.error({ err }, 'secondary mongodb index bootstrap failed — continuing with an unindexed audit sink');
+      await client.close().catch(() => undefined);
+      log.error({ err }, 'secondary mongodb index bootstrap failed — audit sink not ready');
+      return null;
     }
     log.info({ db: env.mongodbSecondaryDb }, 'secondary mongodb audit sink connected');
     return { client, db, collections };

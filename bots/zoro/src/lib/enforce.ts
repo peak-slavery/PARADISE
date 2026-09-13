@@ -1,6 +1,5 @@
 import {
   PermissionFlagsBits,
-  PermissionsBitField,
   type Client,
   type GuildMember,
   type GuildTextBasedChannel,
@@ -112,8 +111,7 @@ export function gainedDangerousPermissions(before: string | null, after: string 
   const newBits = after ? safeBigInt(after) : 0n;
   if (newBits === 0n) return [];
 
-  const gained = new PermissionsBitField(newBits & ~oldBits);
-  return DANGEROUS_PERMISSIONS.filter((flag) => gained.has(flag)).map(
+  return DANGEROUS_PERMISSIONS.filter((flag) => (newBits & ~oldBits & BigInt(flag)) !== 0n).map(
     (flag) => PERMISSION_LABELS[String(flag)] ?? String(flag),
   );
 }

@@ -101,6 +101,7 @@ const EMERGENCY_CONFIG: AntinukeConfig = {
   roleThreshold: 1,
   windowSeconds: 10,
 };
+export { EMERGENCY_CONFIG };
 
 /** Returns the trip threshold for a given destructive action. */
 export function thresholdFor(config: AntinukeConfig, action: ThreatAction): number {

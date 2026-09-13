@@ -3,8 +3,6 @@ import { SlashCommandBuilder } from 'discord.js';
 import type { CommandModule } from '../types.js';
 import { removeGuildWhitelist, writeGuildWhitelist } from '../whitelist.js';
 
-const MASTER_DISCORD_ID = '1479589523426902208';
-
 export const data = new SlashCommandBuilder()
   .setName('authorize')
   .setDescription('Manage guild command authorization')
@@ -33,7 +31,8 @@ function validGuildId(value: string): boolean {
 }
 
 export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Promise<void> {
-  if (ctx.userId !== MASTER_DISCORD_ID) {
+  const masterDiscordId = ctx.services.env.masterDiscordId;
+  if (!masterDiscordId || ctx.userId !== masterDiscordId) {
     await ctx.error('Master access required', 'Only the master operator can manage guild authorization.', true);
     return;
   }

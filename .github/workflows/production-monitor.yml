@@ -1,0 +1,33 @@
+name: Production monitor
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production-monitor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run monitor:production
+        env:
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+          DASHBOARD_HEALTH_TOKEN: ${{ secrets.DASHBOARD_HEALTH_TOKEN }}
+          HEALTH_TOKEN: ${{ secrets.HEALTH_TOKEN }}
+          SHANKS_URL: ${{ vars.SHANKS_URL }}
+          SANJI_URL: ${{ vars.SANJI_URL }}
+          ZORO_URL: ${{ vars.ZORO_URL }}
+          BOAHANCOCK_URL: ${{ vars.BOAHANCOCK_URL }}
+          NAMI_URL: ${{ vars.NAMI_URL }}
+          LUFFY_URL: ${{ vars.LUFFY_URL }}
+          NIKO_ROBIN_URL: ${{ vars.NIKO_ROBIN_URL }}
+          CYRENE_URL: ${{ vars.CYRENE_URL }}

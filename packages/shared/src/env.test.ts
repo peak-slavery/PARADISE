@@ -24,8 +24,8 @@ describe('deploy environment', () => {
       BOT_NAME: 'Zoro',
       DISCORD_TOKEN: 'discord-token',
       DISCORD_CLIENT_ID: '1544547167858069504',
-      OWNER_IDS: '1479589523426902208',
-      MASTER_DISCORD_ID: '1479589523426902208',
+      OWNER_IDS: '123456789012345678',
+      MASTER_DISCORD_ID: '123456789012345678',
       CEREBRAS_API_KEY: 'cerebras-key',
       OPENROUTER_API_KEY: 'openrouter-key',
       AGNES_IMAGE_API_KEY: 'agnes-key',
@@ -37,7 +37,7 @@ describe('deploy environment', () => {
     expect(env.hasCerebras).toBe(true);
     expect(env.hasAgnesImage).toBe(true);
     expect(env.hasTts).toBe(true);
-    expect(env.masterDiscordId).toBe('1479589523426902208');
+    expect(env.masterDiscordId).toBe('123456789012345678');
     expect(env.agnesImageModel).toBe('agnes-image-2.5-flash');
     expect(env.zoroSlmModel).toBe('qwen-3.8-27b');
     expect(env.zoroSlmMaxTokens).toBe(64);

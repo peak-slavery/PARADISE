@@ -14,7 +14,7 @@
  */
 
 const DB_NAME = process.env.MONGODB_DB || 'eiflow';
-const LOG_TTL_SECONDS = 60 * 60 * 24 * 60; // 60 days
+const { LOG_TTL_SECONDS, indexes } = require('./indexes.cjs');
 
 const db = db.getSiblingDB(DB_NAME);
 
@@ -28,31 +28,9 @@ const db = db.getSiblingDB(DB_NAME);
   }
 });
 
-// --- logs: query by guild + time, expire automatically ---------------------
-db.logs.createIndex({ guild_id: 1, created_at: -1 }, { name: 'logs_guild_created' });
-db.logs.createIndex({ bot_id: 1, created_at: -1 }, { name: 'logs_bot_created' });
-db.logs.createIndex({ action: 1, created_at: -1 }, { name: 'logs_action_created' });
-// The TTL index is what keeps the 512MB M0 cap from ever being reached.
-db.logs.createIndex({ created_at: 1 }, { name: 'logs_ttl', expireAfterSeconds: LOG_TTL_SECONDS });
-
-// --- xp --------------------------------------------------------------------
-db.xp.createIndex({ guild_id: 1, user_id: 1 }, { name: 'xp_guild_user', unique: true });
-db.xp.createIndex({ guild_id: 1, xp: -1 }, { name: 'xp_leaderboard' });
-db.xp.createIndex({ guild_id: 1, level: -1 }, { name: 'xp_level' });
-
-// --- card_games ------------------------------------------------------------
-db.card_games.createIndex({ guild_id: 1, user_id: 1 }, { name: 'cards_guild_user', unique: true });
-db.card_games.createIndex({ guild_id: 1, score: -1 }, { name: 'cards_leaderboard' });
-
-// --- inventories -----------------------------------------------------------
-db.inventories.createIndex({ guild_id: 1, user_id: 1 }, { name: 'inv_guild_user', unique: true });
-
-// --- ai_context ------------------------------------------------------------
-db.ai_context.createIndex({ guild_id: 1, user_id: 1, scope: 1 }, { name: 'ai_ctx_unique', unique: true });
-db.ai_context.createIndex({ updated_at: 1 }, { name: 'ai_ctx_updated' });
-// Prompts/responses can contain personal data, so retention is bounded (30d).
-// Distinct name so adding it never conflicts with the existing index above.
-db.ai_context.createIndex({ updated_at: 1 }, { name: 'ai_ctx_ttl', expireAfterSeconds: 60 * 60 * 24 * 30 });
+for (const index of indexes) {
+  db[index.collection].createIndex(index.key, { name: index.name, ...index.options });
+}
 
 // --- Document validators (cheap safety net, validationLevel: moderate) ------
 db.runCommand({

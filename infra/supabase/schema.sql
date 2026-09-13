@@ -3,8 +3,12 @@
 -- Source of truth for: identity, server authorization, bot config, moderation
 -- records and security events. Low write volume, relational, RLS-protected.
 --
--- Apply: psql "$SUPABASE_DB_URL" -f infra/supabase/schema.sql
---    or: paste into the Supabase SQL editor.
+-- Compatibility entrypoint: applies every migration in filename order.
+--
+-- Prefer migration-aware execution with a persistent migration ledger:
+--   psql "$SUPABASE_DB_URL" -f infra/supabase/apply-migrations.sql
+--
+-- The ledger makes execution idempotent and records which migrations have run.
 --
 -- High-volume activity data (logs, xp, card games, inventories, ai context)
 -- lives in MongoDB — see infra/mongo/init.js. Do NOT put it here; each free
@@ -40,6 +44,20 @@ create table if not exists public.users (
 -- `is_master` is provisioned by a trusted migration/service-role path. The
 -- browser role cannot change it; see the protected trigger below.
 alter table public.users add column if not exists is_master boolean not null default false;
+alter table public.users enable row level security;
+
+create table if not exists public.admin_users (
+  user_id uuid primary key references public.users(id) on delete cascade,
+  role text not null check (role in ('master', 'operator', 'support')),
+  created_at timestamptz not null default now(),
+  created_by uuid references public.users(id),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.admin_users add column if not exists updated_at timestamptz not null default now();
+
+alter table public.admin_users enable row level security;
+revoke all on public.admin_users from anon, authenticated;
 
 comment on table public.users is 'Dashboard identities. discord_id mirrors the Discord OAuth subject.';
 
@@ -464,8 +482,8 @@ revoke all on function public.owns_guild(text) from public;
 grant execute on function public.owns_guild(text) to authenticated, service_role;
 
 -- Master access is intentionally a separate security-definer predicate. It
--- avoids recursive RLS policies and allows a DB flag plus the immutable
--- operator identity to be enforced in one place.
+-- avoids recursive RLS policies. Privilege is provisioned only through
+-- database state controlled by a trusted server-side migration/bootstrap path.
 create or replace function public.is_master_user()
 returns boolean
 language sql
@@ -475,15 +493,19 @@ set search_path = public
 as $$
   select exists (
     select 1
-    from public.users u
-    where u.id = auth.uid()
-      and (u.is_master = true or u.discord_id = '1479589523426902208')
+    from public.admin_users a
+    where a.user_id = auth.uid()
+      and a.role = 'master'
   );
 $$;
 
 -- Same lockdown as `owns_guild` above.
 revoke all on function public.is_master_user() from public;
 grant execute on function public.is_master_user() to authenticated, service_role;
+
+drop policy if exists admin_users_master_read on public.admin_users;
+create policy admin_users_master_read on public.admin_users
+  for select using (public.is_master_user());
 
 create or replace function public.can_access_guild(p_guild_id text)
 returns boolean

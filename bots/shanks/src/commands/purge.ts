@@ -1,5 +1,5 @@
 import { PermissionFlagsBits, SlashCommandBuilder, type GuildTextBasedChannel } from 'discord.js';
-import { requirePermission, UserError, type CommandModule } from '@eiflow/shared';
+import { requireBotPermission, requirePermission, UserError, type CommandModule } from '@eiflow/shared';
 import { recordAction } from '../lib/store.js';
 
 const MAX_PURGE = 100;
@@ -114,6 +114,7 @@ async function purgeMembers(ctx: Parameters<CommandModule['execute']>[0]): Promi
   requirePermission(ctx, PermissionFlagsBits.KickMembers, 'Kick Members');
   const guild = ctx.interaction.guild;
   if (!guild) throw new UserError('This command can only be used inside a server.');
+  requireBotPermission(ctx, PermissionFlagsBits.KickMembers, 'Kick Members');
 
   const role = ctx.interaction.options.getRole('role');
   if (!role) throw new UserError('You must specify a role.');

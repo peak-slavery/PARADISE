@@ -173,20 +173,22 @@ describe('abuse controls', () => {
     });
   });
 
-  it('retains a queue slot until a timed-out task settles', async () => {
+  it('releases a queue slot at the timeout boundary', async () => {
     let settle!: () => void;
     const running = new Promise<void>((resolve) => { settle = resolve; });
     const queue = new TaskQueue({ concurrency: 1, timeoutMs: 5 });
     const first = queue.run(() => running);
 
     await expect(first).rejects.toBeInstanceOf(QueueTimeoutError);
-    expect(queue.stats.active).toBe(1);
+    expect(queue.stats.active).toBe(0);
 
     const second = queue.run(async () => 'second', { maxPending: 1 });
-    expect(queue.stats.pending).toBe(1);
-    settle();
     await expect(second).resolves.toBe('second');
+
+    settle();
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(queue.stats.active).toBe(0);
+    expect(queue.stats.pending).toBe(0);
   });
 });
 

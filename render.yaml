@@ -44,7 +44,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -96,7 +96,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -140,7 +140,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -184,7 +184,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -248,7 +248,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -302,7 +302,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -354,7 +354,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB
@@ -398,7 +398,7 @@ services:
       - key: BOT_VERSION
         value: '1.0.0'
       - key: OWNER_IDS
-        value: '1479589523426902208'
+        sync: false
       - key: MONGODB_DB
         value: eiflow
       - key: MONGODB_SECONDARY_DB

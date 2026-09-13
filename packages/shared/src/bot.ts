@@ -13,8 +13,9 @@ import {
   type GuildMember,
   type User,
 } from 'discord.js';
+import { randomUUID } from 'node:crypto';
 import { loadEnv, resetEnvCache, type Env } from './env.js';
-import { createLogger, type Logger } from './logger.js';
+import { createLogger, logOperationFields, type Logger } from './logger.js';
 import {
   guard,
   initSentry,
@@ -663,10 +664,26 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     const name = interaction.commandName;
     const guildId = interaction.guildId ?? 'dm';
     const ctx = buildContext(interaction, client, services, options.commandsDir);
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    const baseOperation = { command: name, ...logOperationFields({ guildId, requestId }) };
+    const finishOperation = (status: string, errorClass?: string): void => {
+      log.info({
+        ...baseOperation,
+        ...logOperationFields({
+          guildId,
+          requestId,
+          latencyMs: Date.now() - startedAt,
+          status,
+          errorClass,
+        }),
+      }, 'command operation completed');
+    };
 
     try {
       if (guildId !== 'dm' && !(await services.isAuthorized(guildId))) {
         await ctx.error('Not authorized', 'This server is not enabled for this bot.');
+        finishOperation('unauthorized');
         return;
       }
 
@@ -674,6 +691,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         const state = await services.getControlState(guildId);
         if (!state.enabled || state.paused || state.serverPaused) {
           await ctx.warn('Bot paused', 'This bot is currently paused for this server.');
+          finishOperation('paused');
           return;
         }
       }
@@ -689,6 +707,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
       );
       if (!verdict.allowed) {
         await ctx.warn('Slow down', `You can use this command again in ${verdict.retryAfterSec}s.`);
+        finishOperation('rate_limited');
         return;
       }
 
@@ -698,10 +717,25 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         { botId: env.botId, command: name, guildId, userId: interaction.user.id },
       );
 
-      if (!result.ok) await renderFailure(ctx, result.error);
+      if (!result.ok) {
+        await renderFailure(ctx, result.error);
+        finishOperation(result.expected ? 'expected_failure' : 'unexpected_failure', result.error.name);
+      } else {
+        finishOperation('ok');
+      }
     } catch (err) {
       // Last-resort net: nothing escapes into the gateway.
-      log.error({ err, command: name, guildId }, 'interaction handler crashed');
+      log.error({
+        ...baseOperation,
+        ...logOperationFields({
+          guildId,
+          requestId,
+          latencyMs: Date.now() - startedAt,
+          status: 'handler_failed',
+          errorClass: err instanceof Error ? err.name : 'UnknownError',
+        }),
+        err,
+      }, 'interaction handler crashed');
       reportError(err, { botId: env.botId, command: name, guildId });
     }
   });

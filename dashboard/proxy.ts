@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { updateSession } from '@/lib/supabase/middleware';
+import { assertDashboardProductionEnvironment } from '@/lib/demo';
 
 /**
  * Route gate (Next.js 16 `proxy` convention).
@@ -49,6 +50,7 @@ function isSameOrigin(request: NextRequest): boolean {
 }
 
 export async function proxy(request: NextRequest) {
+  assertDashboardProductionEnvironment();
   const { response, user, configured } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
 
@@ -69,7 +71,7 @@ export async function proxy(request: NextRequest) {
   const isInternalEndpoint = pathname.startsWith('/api/internal/');
 
   if (!configured && !isInternalEndpoint) {
-    if (process.env.NODE_ENV === 'production' && process.env.DEMO_MODE !== 'true') {
+    if (process.env.DEMO_MODE !== 'true') {
       return NextResponse.json(
         { error: 'Dashboard authentication is not configured' },
         { status: 503, headers: { 'Cache-Control': 'no-store' } },

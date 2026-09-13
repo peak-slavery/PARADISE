@@ -2,6 +2,8 @@
 // caller owns). Never import from a `'use client'` file.
 
 import { credentials, demoConfig } from '../demo';
+import { demoMode } from '../demo';
+import { fetchUnavailable } from './unavailable';
 import { createSupabaseServerClient } from '../supabase/server';
 import { getBot } from '../bots';
 import type { ConfigValues } from '../types';
@@ -53,11 +55,13 @@ function demoValues(guildId: string, botId: string): ConfigValues {
 
 export async function getBotConfig(guildId: string, botId: string): Promise<ConfigResult> {
   if (!credentials().supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     return { values: demoValues(guildId, botId), updatedAt: null, demo: true };
   }
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     return { values: demoValues(guildId, botId), updatedAt: null, demo: true };
   }
 
@@ -98,12 +102,14 @@ export async function saveBotConfig(
   values: ConfigValues,
 ): Promise<SaveResult> {
   if (!credentials().supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     saveDemoConfig(guildId, botId, values);
     return { ok: true, demo: true, updatedAt: new Date().toISOString() };
   }
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
+    if (!demoMode()) throw fetchUnavailable();
     saveDemoConfig(guildId, botId, values);
     return { ok: true, demo: true, updatedAt: new Date().toISOString() };
   }

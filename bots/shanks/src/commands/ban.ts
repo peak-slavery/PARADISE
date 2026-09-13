@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { requirePermission, UserError, type CommandModule } from '@eiflow/shared';
+import { requireBotPermission, requirePermission, UserError, type CommandModule } from '@eiflow/shared';
 import { PermissionFlagsBits } from 'discord.js';
 import { notifyTarget, recordAction } from '../lib/store.js';
 
@@ -24,6 +24,7 @@ export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Pro
   const guild = ctx.interaction.guild;
   if (!guild) throw new UserError('This command can only be used inside a server.');
   requirePermission(ctx, PermissionFlagsBits.BanMembers, 'Ban Members');
+  requireBotPermission(ctx, PermissionFlagsBits.BanMembers, 'Ban Members');
 
   const target = ctx.targetUser();
   if (target.id === guild.ownerId) throw new UserError('The server owner cannot be banned.');
