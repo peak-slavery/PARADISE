@@ -1,11 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveGroqAutomodKey } from './credential-keys.mjs';
+import { resolveCerebrasKey } from './credential-keys.mjs';
 
-test('uses the normal GROQ key when the AutoMod label is absent', () => {
-  assert.equal(resolveGroqAutomodKey({ explicit: '', normal: 'normal-key' }), 'normal-key');
+test('returns an empty value when Cerebras is not configured', () => {
+  assert.equal(resolveCerebrasKey({ explicit: '' }), '');
 });
 
-test('prefers an explicit AutoMod GROQ key when present', () => {
-  assert.equal(resolveGroqAutomodKey({ explicit: 'automod-key', normal: 'normal-key' }), 'automod-key');
+test('trims an explicit Cerebras key', () => {
+  assert.equal(resolveCerebrasKey({ explicit: ' cerebras-key ' }), 'cerebras-key');
+});
+
+test('prefers an environment assignment over the credential file', async () => {
+  const { resolveCredential } = await import('./credential-keys.mjs');
+  assert.equal(resolveCredential({
+    raw: 'GROQ_API_KEY=file-key\n"gpt oss" = descriptive-key',
+    name: 'GROQ_API_KEY',
+    environment: ' env-key ',
+    descriptive: /"gpt oss"\s*=\s*(\S+)/,
+  }), 'env-key');
+});
+
+test('accepts explicit assignments and descriptive credential lines', async () => {
+  const { resolveCredential } = await import('./credential-keys.mjs');
+  assert.equal(resolveCredential({ raw: 'GROQ_API_KEY=file-key', name: 'GROQ_API_KEY' }), 'file-key');
+  assert.equal(resolveCredential({
+    raw: '"gpt oss" = descriptive-key',
+    name: 'GROQ_API_KEY',
+    descriptive: /"gpt oss"\s*=\s*(\S+)/,
+  }), 'descriptive-key');
 });

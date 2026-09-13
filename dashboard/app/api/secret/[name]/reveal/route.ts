@@ -42,7 +42,7 @@ export async function POST(
     const since = new Date(Date.now() - REVEAL_WINDOW_MS);
     // `limit` caps the scan — only the ceiling matters, not the exact total.
     const recent = await db.collection('logs').countDocuments(
-      { action: 'secret.reveal', user_id: access.userId, created_at: { $gte: since } },
+      { action: 'secret.reveal', created_at: { $gte: since } },
       { limit: REVEAL_LIMIT },
     );
     if (recent >= REVEAL_LIMIT) {
@@ -51,9 +51,6 @@ export async function POST(
         { status: 429, headers: { 'cache-control': 'no-store', 'retry-after': '900' } },
       );
     }
-
-    const value = await loadSecret(name);
-    if (value === null) return NextResponse.json({ error: 'Secret not found' }, { status: 404 });
 
     await db.collection('logs').insertOne({
       bot_id: 'dashboard',
@@ -70,6 +67,8 @@ export async function POST(
       },
       created_at: new Date(),
     });
+    const value = await loadSecret(name);
+    if (value === null) return NextResponse.json({ error: 'Secret not found' }, { status: 404 });
     return NextResponse.json({ name, value }, { headers: { 'cache-control': 'no-store' } });
   } catch {
     return NextResponse.json({ error: 'Secret vault is unavailable' }, { status: 503 });

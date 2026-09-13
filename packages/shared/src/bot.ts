@@ -6,6 +6,7 @@ import {
   DiscordAPIError,
   EmbedBuilder,
   Events,
+  MessageFlags,
   type APIEmbedField,
   type ChatInputCommandInteraction,
   type ClientOptions,
@@ -41,8 +42,8 @@ import type { InterlinkEvent } from './interlink.js';
 import { writeGuildWhitelist } from './whitelist.js';
 import { hydrateRuntimeSecrets } from './vault-client.js';
 
-const MASTER_DISCORD_ID = '1479589523426902208';
 const AUDIT_SECRET_KEY = /(token|secret|password|private.?key|service.?role|connection.?string|mongodb|redis|supabase|firebase|cloudflare|authorization|cookie)/i;
+const DISCORD_TOKEN_PATTERN = /^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\./;
 
 export type GuildAuthorizationDecision = 'full' | 'temp' | 'deny';
 
@@ -63,7 +64,11 @@ export function redactAuditMeta(value: Record<string, unknown>): Record<string, 
   const walk = (input: unknown, depth: number): unknown => {
     if (depth > 4) return '[truncated]';
     if (typeof input === 'string') {
-      if (/^(?:mongodb(?:\+srv)?|https?):\/\//i.test(input) || /-----BEGIN .*PRIVATE KEY-----/.test(input)) return '[redacted]';
+      if (
+        /^(?:mongodb(?:\+srv)?|postgres(?:ql)?|redis):\/\//i.test(input) ||
+        DISCORD_TOKEN_PATTERN.test(input) ||
+        /-----BEGIN .*PRIVATE KEY-----/.test(input)
+      ) return '[redacted]';
       return input.slice(0, 512);
     }
     if (Array.isArray(input)) return input.slice(0, 25).map((item) => walk(item, depth + 1));
@@ -106,6 +111,36 @@ export interface BotRuntime {
   shutdown: (signal: string) => Promise<void>;
 }
 
+const SHUTDOWN_TIMEOUT_MS = 25_000;
+
+export class StartupCancelledError extends Error {
+  override readonly name = 'StartupCancelledError';
+}
+
+export function assertStartupActive(shuttingDown: boolean): void {
+  if (shuttingDown) throw new StartupCancelledError('startup cancelled by shutdown');
+}
+
+export type ShutdownOutcome = 'completed' | 'timed-out';
+
+export function withShutdownTimeout(operation: Promise<void>, timeoutMs: number): Promise<ShutdownOutcome> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve('timed-out'), timeoutMs);
+    timer.unref?.();
+    operation.then(
+      () => {
+        clearTimeout(timer);
+        operation.catch(() => undefined);
+        resolve('completed');
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export function buildClientOptions(options: Pick<CreateBotOptions, 'intents' | 'partials'>): ClientOptions {
   return {
     intents: options.intents,
@@ -119,13 +154,17 @@ async function replyEmbed(
   ephemeral: boolean,
   log: Logger,
 ): Promise<void> {
-  await replyOrFollowUp(interaction, { embeds: [embed], ephemeral }, log);
+  await replyOrFollowUp(interaction, {
+    embeds: [embed],
+    ephemeral,
+  }, log);
 }
 
 function buildContext(
   interaction: ChatInputCommandInteraction,
   client: Client,
   services: BotServices,
+  commandsDir: string,
 ): CommandContext {
   const guildId = interaction.guildId ?? 'dm';
   const log = services.log.child({ command: interaction.commandName, guildId, userId: interaction.user.id });
@@ -138,11 +177,12 @@ function buildContext(
     services,
     log,
     guildId,
+    commandsDir,
     userId: interaction.user.id,
 
     async defer(ephemeral = false) {
       if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply({ ephemeral });
+        await interaction.deferReply({ flags: ephemeral ? MessageFlags.Ephemeral : undefined });
       }
     },
 
@@ -185,9 +225,8 @@ function buildContext(
     },
 
     reason(fallback) {
-      return sanitizeReason(interaction.options.getString('reason') ?? undefined) === 'No reason provided'
-        ? (fallback ?? 'No reason provided')
-        : sanitizeReason(interaction.options.getString('reason') ?? undefined);
+      const raw = sanitizeReason(interaction.options.getString('reason') ?? undefined);
+      return raw === 'No reason provided' ? (fallback ?? 'No reason provided') : raw;
     },
   };
 
@@ -236,7 +275,7 @@ function hexColor(value: unknown): number | null {
   return /^[0-9a-f]{6}$/i.test(raw) ? Number.parseInt(raw, 16) : null;
 }
 
-function buildDashboardEmbed(payload: Record<string, unknown>): {
+export function buildDashboardEmbed(payload: Record<string, unknown>): {
   embed: EmbedBuilder;
   components: ActionRowBuilder<ButtonBuilder>[];
 } | null {
@@ -277,6 +316,8 @@ function buildDashboardEmbed(payload: Record<string, unknown>): {
     }
   }
   if (fields.length > 0) embed.addFields(fields);
+  const hasContent = Boolean(title || description || url || footer || thumbnail || image || author?.name) || fields.length > 0;
+  if (!hasContent) return null;
 
   const buttons: ButtonBuilder[] = [];
   if (Array.isArray(payload.buttons)) {
@@ -338,6 +379,14 @@ export async function handleDashboardEmbed(
 
 export async function createBot(options: CreateBotOptions): Promise<BotRuntime> {
   const startedAt = Date.now();
+  let shutdownRequested = false;
+  let teardownStarted = false;
+  let teardownComplete: Promise<void> | null = null;
+  const onStartupSignal = (): void => {
+    shutdownRequested = true;
+  };
+  process.once('SIGTERM', onStartupSignal);
+  process.once('SIGINT', onStartupSignal);
 
   // Validate explicit bootstrap values, especially DISCORD_TOKEN, before any
   // optional vault work. The health server binds from this immutable snapshot;
@@ -346,7 +395,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   const bootstrapLog = createLogger(bootstrapEnv);
   const server: HealthServer = await startHealthServer({
     port: bootstrapEnv.port,
-    host: process.env.LOCAL_ONLY === 'true' ? '127.0.0.1' : undefined,
+    host: ['true', '1', 'yes'].includes(process.env.LOCAL_ONLY?.trim().toLowerCase() ?? '') ? '127.0.0.1' : undefined,
     botId: bootstrapEnv.botId,
     version: bootstrapEnv.botVersion,
     startedAt,
@@ -386,6 +435,14 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   let secondaryMongoHandle: MongoHandle | null = null;
   const interlink = new BotInterlink(kv, env.botId);
   const controlCache = new Map<string, { state: BotControlState; expiresAt: number }>();
+  const cacheControlState = (guildId: string, state: BotControlState): void => {
+    controlCache.set(guildId, { state, expiresAt: Date.now() + 15_000 });
+    if (controlCache.size <= 10_000) return;
+    const now = Date.now();
+    for (const [key, value] of controlCache) {
+      if (value.expiresAt <= now) controlCache.delete(key);
+    }
+  };
 
   /* Batched log writer — the main defence against blowing the Mongo write cap. */
   let writeCount = 0;
@@ -414,13 +471,21 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   server.setDependencies(healthDeps);
 
   // Port is live, so blocking database connects are now safe to run.
-  mongoHandle = await connectMongo(env, log);
-  secondaryMongoHandle = await connectSecondaryMongo(env, log);
+  const [primaryMongo, secondaryMongo] = await Promise.all([
+    connectMongo(env, log),
+    connectSecondaryMongo(env, log),
+  ]);
+  mongoHandle = primaryMongo;
+  secondaryMongoHandle = secondaryMongo;
 
   const baseSink = createBatchWriter<LogDoc>({
     getCollection: () => mongoHandle?.collections.logs ?? null,
     intervalMs: 30_000,
     maxBatch: 200,
+    maxBuffered: 5_000,
+    onDrop: (dropped) => {
+      log.warn({ dropped }, 'primary audit log buffer capped; dropping oldest entries');
+    },
     onError: (err, dropped) => {
       const failedHandle = mongoHandle;
       mongoHandle = null;
@@ -433,6 +498,10 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     getCollection: () => secondaryMongoHandle?.collections.logs ?? null,
     intervalMs: 30_000,
     maxBatch: 200,
+    maxBuffered: 5_000,
+    onDrop: (dropped) => {
+      log.warn({ dropped }, 'secondary audit log buffer capped; dropping oldest entries');
+    },
     onError: (err, dropped) => {
       // Backup failure must never interrupt primary bot operation. Mark the
       // handle unavailable so the reconnect loop can establish a fresh sink.
@@ -450,11 +519,16 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
       baseSink.push(safeDoc);
       backupSink.push(safeDoc);
     },
-    flush: () => baseSink.flush(),
-    stop: () => baseSink.stop(),
+    async flush() {
+      await Promise.all([baseSink.flush(), backupSink.flush()]);
+    },
+    async stop() {
+      await Promise.all([baseSink.stop(), backupSink.stop()]);
+    },
     stats: () => ({
       buffered: baseSink.stats().buffered + backupSink.stats().buffered,
-      flushed: baseSink.stats().flushed,
+      dropped: baseSink.stats().dropped + backupSink.stats().dropped,
+      flushed: baseSink.stats().flushed + backupSink.stats().flushed,
       failed: baseSink.stats().failed + backupSink.stats().failed,
     }),
   };
@@ -496,7 +570,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
       ]);
       if (settings.error || botState.error) {
         const blocked = { ...fallback, enabled: false, paused: true, serverPaused: true };
-        controlCache.set(guildId, { state: blocked, expiresAt: Date.now() + 15_000 });
+        cacheControlState(guildId, blocked);
         return blocked;
       }
       const state: BotControlState = {
@@ -505,7 +579,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         serverPaused: settings.data?.server_paused ?? false,
         featureFlags: (botState.data?.feature_flags as Record<string, unknown> | null) ?? {},
       };
-      controlCache.set(guildId, { state, expiresAt: Date.now() + 15_000 });
+      cacheControlState(guildId, state);
       return state;
     },
     isOwner: (userId) => env.ownerIds.includes(userId),
@@ -524,8 +598,6 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   // Bot-specific handlers first; the shared universal commands are the fallback
   // so a bot can override /help or /about by defining its own.
   const runner = new LazyCommandRunner([options.commandsDir, UNIVERSAL_COMMANDS_DIR]);
-  // Exposed so the shared /help command can enumerate this bot's commands.
-  process.env.BOT_COMMANDS_DIR ??= options.commandsDir;
   const unlimited = new Set(options.unlimitedCommands ?? []);
 
   /* --- server lock ------------------------------------------------------ */
@@ -551,36 +623,38 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   /* --- command dispatch -------------------------------------------------- */
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isButton()) {
-      if (!interaction.customId.startsWith('guild-auth:')) return;
-      if (interaction.user.id !== MASTER_DISCORD_ID) {
-        await interaction.reply({ content: 'Only the master operator can approve guilds.', ephemeral: true }).catch(() => undefined);
-        return;
-      }
-      const authorization = parseGuildAuthorizationButton(interaction.customId);
-      const reviewChannelConfigured = Boolean(env.devGuildId && env.devAuthChannelId);
-      if (
-        !reviewChannelConfigured ||
-        interaction.guildId !== env.devGuildId ||
-        interaction.channelId !== env.devAuthChannelId ||
-        interaction.message.author.id !== client.user?.id ||
-        !authorization
-      ) {
-        await interaction.reply({ content: 'This authorization control is invalid or expired.', ephemeral: true }).catch(() => undefined);
-        return;
-      }
-      if (!supabase) {
-        await interaction.reply({ content: 'Authorization storage is unavailable.', ephemeral: true }).catch(() => undefined);
-        return;
-      }
       try {
+        if (!interaction.customId.startsWith('guild-auth:')) return;
+        const masterDiscordId = env.masterDiscordId;
+        if (!masterDiscordId || interaction.user.id !== masterDiscordId) {
+          await interaction.reply({ content: 'Only the master operator can approve guilds.', flags: MessageFlags.Ephemeral }).catch(() => undefined);
+          return;
+        }
+        const authorization = parseGuildAuthorizationButton(interaction.customId);
+        const reviewChannelConfigured = Boolean(env.devGuildId && env.devAuthChannelId);
+        const messageAuthorId = interaction.message.author?.id ?? null;
+        if (
+          !reviewChannelConfigured ||
+          interaction.guildId !== env.devGuildId ||
+          interaction.channelId !== env.devAuthChannelId ||
+          messageAuthorId !== client.user?.id ||
+          !authorization
+        ) {
+          await interaction.reply({ content: 'This authorization control is invalid or expired.', flags: MessageFlags.Ephemeral }).catch(() => undefined);
+          return;
+        }
+        if (!supabase) {
+          await interaction.reply({ content: 'Authorization storage is unavailable.', flags: MessageFlags.Ephemeral }).catch(() => undefined);
+          return;
+        }
         const { decision, guildId } = authorization;
         const type = decision === 'deny' ? 'unauthorised' : decision;
         const expiresAt = decision === 'temp' ? new Date(Date.now() + 24 * 60 * 60_000).toISOString() : null;
         await writeGuildWhitelist(supabase, { guildId, type: type as 'full' | 'temp' | 'unauthorised', expiresAt, kv });
         await interaction.update({ components: [], content: `Authorization decision: ${decision === 'deny' ? 'denied' : decision === 'temp' ? 'temporary 24h' : 'full access'}` });
       } catch (error) {
-        log.error({ err: error, guildId: authorization.guildId }, 'guild authorization decision failed');
-        await interaction.reply({ content: 'The authorization decision could not be saved.', ephemeral: true }).catch(() => undefined);
+        log.error({ err: error }, 'guild authorization button handler failed');
+        await interaction.reply({ content: 'The authorization decision could not be saved.', flags: MessageFlags.Ephemeral }).catch(() => undefined);
       }
       return;
     }
@@ -588,7 +662,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
 
     const name = interaction.commandName;
     const guildId = interaction.guildId ?? 'dm';
-    const ctx = buildContext(interaction, client, services);
+    const ctx = buildContext(interaction, client, services, options.commandsDir);
 
     try {
       if (guildId !== 'dm' && !(await services.isAuthorized(guildId))) {
@@ -604,17 +678,18 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         }
       }
 
-      if (!unlimited.has(name)) {
-        const verdict = await enforceRateLimit(
-          kv,
-          keys.rateLimit(env.botId, guildId, interaction.user.id, name),
-          options.rateLimit ?? DEFAULT_POLICY,
-          services.isOwner(interaction.user.id),
-        );
-        if (!verdict.allowed) {
-          await ctx.warn('Slow down', `You can use this command again in ${verdict.retryAfterSec}s.`);
-          return;
-        }
+      const policy = unlimited.has(name)
+        ? { limit: 30, windowSec: (options.rateLimit ?? DEFAULT_POLICY).windowSec }
+        : (options.rateLimit ?? DEFAULT_POLICY);
+      const verdict = await enforceRateLimit(
+        kv,
+        keys.rateLimit(env.botId, guildId, interaction.user.id, name),
+        policy,
+        services.isOwner(interaction.user.id),
+      );
+      if (!verdict.allowed) {
+        await ctx.warn('Slow down', `You can use this command again in ${verdict.retryAfterSec}s.`);
+        return;
       }
 
       const result = await guard(
@@ -656,80 +731,111 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   let setupCleanup: (() => void | Promise<void>) | undefined;
 
   /* --- Mongo auto-reconnect --------------------------------------------- */
-  let shuttingDown = false;
   const reconnecting = new Set<Promise<void>>();
+  const reconnectInFlight = new Set<'primary' | 'secondary'>();
   const launchReconnect = (
+    slot: 'primary' | 'secondary',
     connect: () => Promise<MongoHandle | null>,
     assign: (handle: MongoHandle) => void,
     label: string,
   ): void => {
+    if (reconnectInFlight.has(slot)) return;
+    reconnectInFlight.add(slot);
     const pending = connect()
       .then(async (handle) => {
         if (!handle) return;
-        if (shuttingDown) {
+        if (shutdownRequested) {
           await handle.client.close().catch((err) => log.error({ err }, `${label} Mongo shutdown failed`));
           return;
+        }
+        const previous = slot === 'primary' ? mongoHandle : secondaryMongoHandle;
+        if (previous && previous !== handle) {
+          await previous.client.close().catch(() => undefined);
         }
         assign(handle);
         log.info(`${label} mongodb reconnected`);
       })
-      .catch((err) => log.error({ err }, `${label} mongodb reconnect failed`));
+      .catch((err) => log.error({ err }, `${label} mongodb reconnect failed`))
+      .finally(() => reconnectInFlight.delete(slot));
     reconnecting.add(pending);
     void pending.finally(() => reconnecting.delete(pending));
   };
   const reconnect = setInterval(() => {
-    if (shuttingDown) return;
-    if (!mongoHandle) launchReconnect(() => connectMongo(env, log), (handle) => { mongoHandle = handle; }, 'primary');
-    if (!secondaryMongoHandle) launchReconnect(() => connectSecondaryMongo(env, log), (handle) => { secondaryMongoHandle = handle; }, 'secondary');
+    if (shutdownRequested) return;
+    if (!mongoHandle) launchReconnect('primary', () => connectMongo(env, log), (handle) => { mongoHandle = handle; }, 'primary');
+    if (!secondaryMongoHandle) launchReconnect('secondary', () => connectSecondaryMongo(env, log), (handle) => { secondaryMongoHandle = handle; }, 'secondary');
   }, 60_000);
   reconnect.unref?.();
 
   /* --- graceful shutdown ------------------------------------------------- */
-  const shutdown = async (signal: string): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
+  const runTeardown = async (signal: string): Promise<void> => {
+    shutdownRequested = true;
     log.info({ signal }, 'shutting down');
 
-    clearInterval(reconnect);
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-    stopInterlink();
-    stopServerLock();
-    await new Promise<void>((resolve) => {
-      server.close((err) => {
-        if (err) log.error({ err }, 'health server shutdown failed');
-        resolve();
+    const timedOut = await withShutdownTimeout((async () => {
+      clearInterval(reconnect);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+      stopInterlink();
+      stopServerLock();
+      await new Promise<void>((resolve) => {
+        server.close((err) => {
+          if (err) log.error({ err }, 'health server shutdown failed');
+          resolve();
+        });
       });
+      client.destroy();
+      await Promise.all([...reconnecting]);
+      let cleanupError: unknown;
+      try {
+        if (typeof setupCleanup === 'function') await setupCleanup();
+      } catch (err) {
+        cleanupError = err;
+        log.error({ err }, 'bot-specific shutdown cleanup failed');
+      } finally {
+        await baseSink.stop().catch((err) => log.error({ err }, 'base log sink shutdown failed'));
+        await backupSink.stop().catch((err) => log.error({ err }, 'backup log sink shutdown failed'));
+        await mongoHandle?.client.close().catch((err) => log.error({ err }, 'primary Mongo shutdown failed'));
+        await secondaryMongoHandle?.client.close().catch((err) => log.error({ err }, 'secondary Mongo shutdown failed'));
+      }
+      if (cleanupError) throw cleanupError;
+    })(), SHUTDOWN_TIMEOUT_MS).catch((err) => {
+      log.error({ err }, 'shutdown cleanup failed');
+      return false;
     });
-    client.destroy();
-    await Promise.all([...reconnecting]);
-    let cleanupError: unknown;
-    try {
-      if (typeof setupCleanup === 'function') await setupCleanup();
-    } catch (err) {
-      cleanupError = err;
-      log.error({ err }, 'bot-specific shutdown cleanup failed');
-    } finally {
-      await baseSink.stop().catch((err) => log.error({ err }, 'base log sink shutdown failed'));
-      await backupSink.stop().catch((err) => log.error({ err }, 'backup log sink shutdown failed'));
-      await mongoHandle?.client.close().catch((err) => log.error({ err }, 'primary Mongo shutdown failed'));
-      await secondaryMongoHandle?.client.close().catch((err) => log.error({ err }, 'secondary Mongo shutdown failed'));
+
+    if (timedOut) {
+      log.error({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'shutdown timed out; forcing process exit');
+      process.exit(1);
     }
     log.info('shutdown complete');
-    if (cleanupError) throw cleanupError;
   };
 
+  const shutdown = async (signal: string): Promise<void> => {
+    shutdownRequested = true;
+    if (teardownComplete) return teardownComplete;
+    if (teardownStarted) return;
+    teardownStarted = true;
+    teardownComplete = runTeardown(signal);
+    return teardownComplete;
+  };
+
+  process.removeListener('SIGTERM', onStartupSignal);
+  process.removeListener('SIGINT', onStartupSignal);
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
 
   try {
+    assertStartupActive(shutdownRequested);
     const cleanup = await options.setup?.({ client, services, log, env });
     setupCleanup = typeof cleanup === 'function' ? cleanup : undefined;
+    assertStartupActive(shutdownRequested);
     await client.login(env.discordToken);
   } catch (err) {
     // Bootstrap failure: drive the normal teardown so the log buffers holding
     // the failure diagnostics are flushed before the process exits.
     await shutdown('BOOTSTRAP_FAIL');
+    if (err instanceof StartupCancelledError) process.exit(0);
     throw err;
   }
 

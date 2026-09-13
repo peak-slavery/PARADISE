@@ -50,7 +50,7 @@ The checkout began with 30 tracked modifications and new local files from the ac
 
 1. Bot health could not be confirmed until processes were started with valid local credentials and reachable providers.
 2. Supabase Discord OAuth is disabled, so dashboard sign-in is not operational until the provider is enabled and redirect URLs are configured.
-3. `GROQ_AUTOMOD_API_KEY` is missing, so Zoro's optional classifier feature is disabled locally.
+3. `CEREBRAS_API_KEY` is missing, so Zoro's optional content-classifier feature is disabled locally.
 4. `npm audit --audit-level=high` previously reported two moderate transitive Vitest advisories; the available automatic fix requires a breaking Vitest 5 upgrade and was not applied blindly.
 
 ## Work performed in this audit
@@ -59,7 +59,7 @@ The checkout began with 30 tracked modifications and new local files from the ac
 - Reused existing `scripts/run-dashboard.mjs` and `scripts/run-bot.mjs` for controlled local startup.
 - Ran the complete static/test/deployment baseline.
 - Ran a bounded cold-start smoke test for all eight bots using the existing in-memory credential launcher.
-- Added the GROQ AutoMod credential alias: an explicit `GROQ_AUTOMOD_API_KEY` wins, otherwise the normal `GROQ_API_KEY` is reused.
+- Zoro uses the shared `CEREBRAS_API_KEY` for its bounded content classifier; it competes for provider quota with Shanks review traffic.
 - Added a secret-free PM2 ecosystem for the dashboard and all eight bots, plus fleet operator commands.
 - Added a 500MB PM2 memory restart threshold and `LOCAL_ONLY=true` loopback binding for the local test profile.
 - Added `npm run test:local`, which refuses to overwrite an existing named service and cleans up its nine named services in a finally path.

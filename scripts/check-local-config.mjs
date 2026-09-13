@@ -1,20 +1,17 @@
 // Read credentials only in-process. Output contains readiness, never values.
 import { readFileSync } from 'node:fs';
-import { resolveGroqAutomodKey } from './credential-keys.mjs';
+import { resolveCredential } from './credential-keys.mjs';
 
 const raw = readFileSync(new URL('../temp cred.txt', import.meta.url), 'utf8');
-const field = (key) => raw.match(new RegExp(`(?:^|\\n)(?:- )?${key}\\s*=\\s*"?([^"\\r\\n]+)`, 'i'))?.[1]?.trim();
+const field = (key) => process.env[key]?.trim() || raw.match(new RegExp(`(?:^|\\n)(?:- )?${key}\\s*=\\s*"?([^"\\r\\n]+)`, 'i'))?.[1]?.trim();
+const credential = (name, descriptive) => resolveCredential({ raw, name, environment: process.env[name], descriptive });
 const providers = {
-  GROQ_API_KEY: field('GROQ_API_KEY') || raw.match(/"gpt oss"\s*=\s*(\S+)/)?.[1],
-  MISTRAL_API_KEY: field('MISTRAL_API_KEY') || raw.match(/"Ministral 3 8B"\s*=\s*(\S+)/)?.[1],
-  NVIDIA_NIM_API_KEY: field('NVIDIA_NIM_API_KEY') || raw.match(/nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/)?.[1],
-  CEREBRAS_API_KEY: field('CEREBRAS_API_KEY') || raw.match(/"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/)?.[1],
-  GROQ_AUTOMOD_API_KEY: resolveGroqAutomodKey({
-    explicit: field('GROQ_AUTOMOD_API_KEY') || process.env.GROQ_AUTOMOD_API_KEY,
-    normal: field('GROQ_API_KEY') || process.env.GROQ_API_KEY || raw.match(/"gpt oss"\s*=\s*(\S+)/)?.[1],
-  }),
+  GROQ_API_KEY: credential('GROQ_API_KEY', /"gpt oss"\s*=\s*(\S+)/),
+  MISTRAL_API_KEY: credential('MISTRAL_API_KEY', /"Ministral 3 8B"\s*=\s*(\S+)/),
+  NVIDIA_NIM_API_KEY: credential('NVIDIA_NIM_API_KEY', /nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/),
+  CEREBRAS_API_KEY: credential('CEREBRAS_API_KEY', /"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
 };
-for (const [name, value] of Object.entries(providers)) console.log(`${name}: ${process.env[name] || value ? 'present' : 'missing'}`);
+for (const [name, value] of Object.entries(providers)) console.log(`${name}: ${value ? 'present' : 'missing'}`);
 
 const url = field('NEXT_PUBLIC_SUPABASE_URL');
 const key = field('NEXT_PUBLIC_SUPABASE_ANON_KEY');

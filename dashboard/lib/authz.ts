@@ -91,7 +91,6 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
   return { ok: true, demo: false };
 }
 
-const MASTER_DISCORD_ID = '1479589523426902208';
 
 export type MasterAuthorization =
   | { ok: true; userId: string; source: 'database' }
@@ -114,7 +113,8 @@ export async function authorizeMaster(): Promise<MasterAuthorization> {
     .maybeSingle();
   if (error) return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
 
-  if (data?.is_master === true || data?.discord_id === MASTER_DISCORD_ID) {
+  const masterDiscordId = process.env.MASTER_DISCORD_ID?.trim();
+  if (data?.is_master === true || (Boolean(masterDiscordId) && data?.discord_id === masterDiscordId)) {
     return { ok: true, userId: user.id, source: 'database' };
   }
 

@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit Board — packages/shared/src/bot.ts</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#16181d; --muted:#5b6270; --line:#e3e6ec;
+    --crit:#b4232c; --crit-bg:#fdecee; --high:#c2410c; --high-bg:#fef1e7;
+    --med:#a16207; --med-bg:#fdf6e3; --low:#3f6212; --low-bg:#f1f7e8;
+    --accent:#1d4ed8; --code-bg:#f2f4f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 80px}
+  header.top{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px 28px;margin-bottom:22px}
+  h1{margin:0 0 6px;font-size:25px;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:14px}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .chip{background:var(--code-bg);border:1px solid var(--line);border-radius:999px;
+    padding:5px 12px;font-size:12.5px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  h2{font-size:19px;margin:34px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:15.5px;margin:22px 0 8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .stat .n{font-size:26px;font-weight:700;line-height:1.1}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.4px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f0f2f5;font-size:12.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+  code{background:var(--code-bg);padding:1.5px 5px;border-radius:4px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+  pre{background:#1b1f27;color:#e6e9ef;padding:14px 16px;border-radius:8px;overflow-x:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.8px;line-height:1.55}
+  pre .cm{color:#8b96a8}
+  pre .bad{color:#ff9aa2}
+  pre .good{color:#9ee493}
+  .sev{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11.5px;
+    font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+  .s-crit{background:var(--crit-bg);color:var(--crit);border:1px solid #f3c2c7}
+  .s-high{background:var(--high-bg);color:var(--high);border:1px solid #f6d0b3}
+  .s-med{background:var(--med-bg);color:var(--med);border:1px solid #f0dfae}
+  .s-low{background:var(--low-bg);color:var(--low);border:1px solid #d7e6bc}
+  .find{border-left:4px solid var(--line)}
+  .find.high{border-left-color:#e07a3f}
+  .find.med{border-left-color:#d9a72c}
+  .find.low{border-left-color:#7fa844}
+  .find h3{margin-top:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .loc{font-family:ui-monospace,monospace;font-size:12.5px;color:var(--accent);
+    background:#eef2ff;border:1px solid #dbe3fb;border-radius:6px;padding:2px 8px}
+  .lbl{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--muted);margin:12px 0 4px}
+  ul{margin:6px 0;padding-left:22px}
+  li{margin:4px 0}
+  .note{background:#eef4ff;border:1px solid #d6e2fb;border-radius:8px;padding:12px 15px;font-size:13.5px;margin:12px 0}
+  .warn{background:#fff7ed;border:1px solid #fcd9b6;border-radius:8px;padding:12px 15px;font-size:13.5px;margin:12px 0}
+  .ok{background:#f0f9ec;border:1px solid #cfe8bd;border-radius:8px;padding:12px 15px;font-size:13.5px;margin:12px 0}
+  footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>Audit Board — <code>packages/shared/src/bot.ts</code></h1>
+  <div class="sub">Paradise Engine · <code>@eiflow/shared</code> · core bot runtime shared by all 8 bots</div>
+  <div class="meta">
+    <span class="chip">sha256 77de13b7…3200ab</span>
+    <span class="chip">789 lines · 30,729 B</span>
+    <span class="chip">mtime 2026-09-13 02:06:24</span>
+    <span class="chip">git: modified vs 1f543dd</span>
+    <span class="chip">typecheck: PASS (exit 0)</span>
+  </div>
+</header>
+
+<div class="warn">
+  <strong>Revision caveat.</strong> This file was being edited by another process while the audit ran
+  (the editor log at 02:01 lists <code>bot.ts</code> twice, and a duplicate <code>let shuttingDown</code>
+  declaration present at 02:05 was gone by 02:07). All findings below are pinned to the revision above.
+  Re-verify line numbers before patching.
+</div>
+
+<h2>1 · File Overview</h2>
+<div class="card">
+  <p><strong>Purpose.</strong> <code>bot.ts</code> is the single boot-and-lifecycle harness every bot in the
+  monorepo runs through. Each <code>bots/*/src/index.ts</code> does a top-level
+  <code>await createBot({...})</code> and supplies only intents, a commands directory, and an optional
+  <code>setup()</code> hook. Everything else — environment validation, secret hydration, health server,
+  database connections, command dispatch, authorization, rate limiting, audit logging and graceful
+  shutdown — is owned here.</p>
+
+  <div class="lbl">Structure (top → bottom)</div>
+  <table>
+    <tr><th>Region</th><th>Lines</th><th>Responsibility</th></tr>
+    <tr><td>Constants</td><td>44–45</td><td>Hardcoded master Discord ID; audit secret-key regex</td></tr>
+    <tr><td><code>parseGuildAuthorizationButton</code></td><td>50–60</td><td>Strict parser for the private guild-review buttons</td></tr>
+    <tr><td><code>redactAuditMeta</code></td><td>62–86</td><td>Depth/size-bounded redaction of audit metadata</td></tr>
+    <tr><td>Types</td><td>88–107</td><td><code>CreateBotOptions</code>, <code>BotRuntime</code></td></tr>
+    <tr><td>Lifecycle helpers</td><td>111–137</td><td><code>assertStartupActive</code>, <code>withShutdownTimeout</code>, <code>buildClientOptions</code></td></tr>
+    <tr><td><code>buildContext</code></td><td>148–218</td><td>Per-interaction <code>CommandContext</code> (option access + sanitisation)</td></tr>
+    <tr><td><code>renderFailure</code></td><td>220–240</td><td>Maps typed errors to user-facing embeds</td></tr>
+    <tr><td>Embed builders</td><td>242–321</td><td><code>boundedString</code>, <code>safeUrl</code>, <code>hexColor</code>, <code>buildDashboardEmbed</code></td></tr>
+    <tr><td><code>handleDashboardEmbed</code></td><td>323–360</td><td>Authorized dashboard→Discord embed relay</td></tr>
+    <tr><td><code>createBot</code></td><td>362–787</td><td>Full lifecycle: env → health bind → hydration → DB → services → dispatch → shutdown</td></tr>
+  </table>
+
+  <div class="lbl">Boot order (the part that matters for deploys)</div>
+  <pre><span class="cm">// 368-369  early SIGTERM/SIGINT trap → sets shuttingDown only</span>
+bootstrapEnv = loadEnv()
+startHealthServer(...)          <span class="cm">// 376  PORT BINDS HERE</span>
+hydrateRuntimeSecrets()         <span class="cm">// 386  optional, failures swallowed</span>
+resetEnvCache(); env = loadEnv()<span class="cm">// 399-400</span>
+server.setDependencies(deps)    <span class="cm">// 443</span>
+mongoHandle = await connectMongo()          <span class="cm">// 446  up to ~27s</span>
+secondaryMongoHandle = await connectSecondaryMongo() <span class="cm">// 447  up to ~27s</span>
+<span class="cm">// ... services, listeners, reconnect timer, shutdown handler ...</span>
+768-771  swap signal handlers → real shutdown
+774/777  assertStartupActive(shuttingDown)
+778      await client.login(...)</pre>
+
+  <div class="ok">
+    <strong>Sound by design (verified, not assumed).</strong>
+    <ul>
+      <li>Port binds <em>before</em> the ~54s database phase — the earlier "No open ports detected" fix holds.</li>
+      <li><code>health.ts:132</code> handles the pre-<code>setDependencies</code> window with <code>{status:"starting"}</code>, so the bind→deps gap is safe.</li>
+      <li><code>health.ts:148-160</code> correctly separates liveness (200 unauthenticated) from readiness (503 authenticated).</li>
+      <li><code>connectMongo</code> / <code>connectSecondaryMongo</code> never throw — they close the client and return <code>null</code>, so the un-try'd calls at 446–447 cannot reject.</li>
+      <li><code>pingSupabase</code> targets <code>servers</code>, which exists (<code>infra/supabase/schema.sql:179</code>).</li>
+      <li><code>AUDIT_SECRET_KEY</code> has no <code>/g</code> flag, so <code>.test()</code> is stateless — no <code>lastIndex</code> bug.</li>
+      <li>Embed field limits match Discord's caps (title 256, description 4096, field value 1024, 25 fields, 5 buttons, 1 row).</li>
+      <li><code>interlink.ts:86-89</code> wraps the handler in try/catch, so a throw from <code>handleDashboardEmbed</code> cannot kill the poll loop.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>2 · Errors Identified</h2>
+
+<div class="card find high">
+  <h3><span class="sev s-high">High</span> F-01 — Startup-cancelled shutdown is a silent no-op <span class="loc">bot.ts:725-726 ↔ 774 / 782</span></h3>
+  <p><code>shutdown()</code> opens with an idempotency guard on the <em>same</em> flag that the early signal trap sets:</p>
+  <pre><span class="cm">// 364-369 — early trap, registered before any startup work</span>
+let shuttingDown = false;
+const onStartupSignal = () =&gt; { shuttingDown = true; };
+process.once('SIGTERM', onStartupSignal);
+process.once('SIGINT',  onStartupSignal);
+
+<span class="cm">// 724-727 — teardown refuses to run if that flag is already set</span>
+const shutdown = async (signal) =&gt; {
+  if (shuttingDown) return;      <span class="bad">// ← fires on the cancelled-startup path</span>
+  shuttingDown = true;</pre>
+  <pre><span class="cm">// 773-784 — the catch that is supposed to drive teardown</span>
+try {
+  assertStartupActive(shuttingDown);   <span class="cm">// throws if a signal arrived during startup</span>
+  ...
+} catch (err) {
+  <span class="cm">// "drive the normal teardown so the log buffers holding the</span>
+  <span class="cm">//  failure diagnostics are flushed before the process exits"</span>
+  await shutdown('BOOTSTRAP_FAIL');    <span class="bad">// ← immediately returns, does nothing</span>
+  throw err;
+}</pre>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>The documented teardown never runs on this path: <code>server.close()</code>, <code>baseSink.stop()</code>, <code>backupSink.stop()</code>, <code>client.destroy()</code> and both <code>client.close()</code> calls are all skipped.</li>
+    <li>Buffered audit logs are lost — precisely the diagnostics the comment claims to preserve.</li>
+    <li>The listening socket is abandoned until the process dies.</li>
+    <li>Reachable whenever SIGTERM/SIGINT lands in the window between line 369 and line 768 — which includes the ~27–54s Mongo connect phase, the longest part of startup.</li>
+  </ul>
+</div>
+
+<div class="card find high">
+  <h3><span class="sev s-high">High</span> F-02 — Graceful shutdown during startup is reported as a crash <span class="loc">bot.ts:779-784</span></h3>
+  <p>The <code>catch</code> block unconditionally rethrows, with no distinction between "startup genuinely failed" and "a normal SIGTERM arrived":</p>
+  <pre>} catch (err) {
+  await shutdown('BOOTSTRAP_FAIL');
+  throw err;   <span class="bad">// ← always propagates, even after a clean teardown</span>
+}</pre>
+  <p>All eight callers use bare top-level <code>await createBot({...})</code> with no surrounding <code>try/catch</code>
+  (e.g. <code>bots/cyrene/src/index.ts:10</code>, <code>bots/luffy/src/index.ts:9</code>). An ESM top-level
+  rejection terminates Node with a <strong>non-zero exit code</strong>.</p>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>A clean, operator-initiated restart is indistinguishable from a crash: Render sees exit ≠ 0 and can mark the deploy/instance as failed.</li>
+    <li>Alerting and crash-rate dashboards are polluted by routine restarts.</li>
+    <li>Note the ordering subtlety: when the signal arrives <em>after</em> line 770 the real <code>shutdown</code> handler runs correctly and tears down fully — and the code <em>still</em> throws afterwards, discarding the clean result.</li>
+  </ul>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">Medium</span> F-03 — Unguarded <code>interaction.message.author.id</code> outside any try/catch <span class="loc">bot.ts:602</span></h3>
+  <pre>if (
+  !reviewChannelConfigured ||
+  interaction.guildId !== env.devGuildId ||
+  interaction.channelId !== env.devAuthChannelId ||
+  interaction.message.author.id !== client.user?.id ||   <span class="bad">// ← no guard, no try/catch</span>
+  !authorization
+) { ... }</pre>
+  <p><code>interaction.message</code> is <code>Message | PartialMessage</code>. When the message is not cached,
+  <code>author</code> is <code>null</code>, so <code>.id</code> throws <code>TypeError</code>. The entire button
+  branch (590–623) sits <em>outside</em> the <code>try</code> that begins at 630 — only the
+  <code>writeGuildWhitelist</code> call is protected.</p>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>Throws inside an <code>async</code> event listener → unhandled promise rejection; the interaction is never acknowledged, so Discord shows "This interaction failed".</li>
+    <li>Triggerable by any user who can produce a <code>guild-auth:</code>-prefixed button in a guild where the bot uses partials.</li>
+  </ul>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">Medium</span> F-04 — Mongo reconnect has no in-flight dedupe; <code>assign</code> can leak a client <span class="loc">bot.ts:696-721</span></h3>
+  <pre>const reconnect = setInterval(() =&gt; {
+  if (shuttingDown) return;
+  if (!mongoHandle) launchReconnect(() =&gt; connectMongo(env, log), (h) =&gt; { mongoHandle = h; }, 'primary');
+  ...
+}, 60_000);</pre>
+  <p><code>launchReconnect</code> registers the promise in <code>reconnecting</code> but never records that an
+  attempt is <em>already in flight</em> for that slot. If one attempt outlives the 60s tick, the next tick
+  launches a second connect for the same handle. Both can resolve, and the second <code>assign(handle)</code>
+  overwrites the first — the first <code>MongoClient</code> is never closed.</p>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>Connection-pool leak; the M0 free tier caps at 500 connections across everything (<code>mongo.ts:167</code>).</li>
+    <li>Worst-case <code>connectMongo</code> is ~27s (3 × 8s selection timeout + 1s + 2s backoff), so overlap needs a network stall — conditional, but real under exactly the conditions that trigger reconnects.</li>
+  </ul>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">Medium</span> F-05 — Master operator ID hardcoded in the runtime <span class="loc">bot.ts:44</span></h3>
+  <pre>const MASTER_DISCORD_ID = '1479589523426902208';   <span class="bad">// also in dashboard/lib/authz.ts + schema.sql</span></pre>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>Gates the guild-authorization buttons (592). Rotating the operator requires a code change and redeploy of every bot.</li>
+    <li>Duplicated across three layers (bot, dashboard, SQL) with no single source of truth — they can silently drift.</li>
+  </ul>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">Medium</span> F-06 — Database connects are awaited sequentially, doubling the startup block <span class="loc">bot.ts:446-447</span></h3>
+  <pre>mongoHandle = await connectMongo(env, log);              <span class="cm">// up to ~27s</span>
+secondaryMongoHandle = await connectSecondaryMongo(env, log);  <span class="cm">// up to ~27s, serial</span></pre>
+  <p>They are independent, so the worst case is ~54s instead of ~27s. This is the exact window that
+  previously broke Render's port scan; the port now binds first, but the bot still cannot serve
+  <code>/health</code> with real dependency status or accept commands for up to 54s.</p>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">Medium</span> F-07 — Index creation shares the connect retry, so an index failure discards a healthy connection <span class="loc">db/mongo.ts:173-190</span></h3>
+  <pre>try {
+  await client.connect();
+  const collections = buildCollections(db);
+  await ensureIndexes(collections);   <span class="bad">// ← same try block as connect()</span>
+  return { client, db, collections };
+} catch (err) { /* retry */ }
+...
+await client.close().catch(() =&gt; undefined);
+return null;   <span class="bad">// whole connection abandoned</span></pre>
+  <p><code>ensureIndexes</code> issues eight <code>createIndex</code> calls, three of them
+  <code>{unique:true}</code>. If pre-existing data violates a unique constraint (duplicate
+  <code>(guild_id,user_id)</code> rows in <code>xp</code>, <code>card_games</code> or <code>inventories</code>),
+  the index build fails, the error is classified as a connection failure, and the bot runs with
+  <strong>no database at all</strong>.</p>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>A data-integrity problem is reported and retried as an infrastructure problem — the retry can never succeed, so the bot stays degraded on every boot until someone fixes the data.</li>
+    <li>Also runs 8 index requests per bot × 8 bots ≈ 64 concurrent index operations against one M0 cluster at boot.</li>
+  </ul>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">Medium</span> F-08 — An empty embed can be sent, producing a Discord 400 <span class="loc">bot.ts:262-321, 357-359</span></h3>
+  <p><code>buildDashboardEmbed</code> sets only the properties that are present and never checks that
+  <em>anything</em> was set. A payload of <code>{ channelId }</code> yields a bare <code>EmbedBuilder</code>
+  that is still dispatched at line 359.</p>
+  <div class="lbl">Impact</div>
+  <ul>
+    <li>Discord rejects embeds with no title/description/fields → <code>DiscordAPIError</code> per relay attempt.</li>
+    <li>Contained by <code>interlink.ts:86-89</code>, so no crash — but the dashboard user gets silence and the logs fill with noise.</li>
+  </ul>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-09 — Five call sites use the deprecated <code>ephemeral</code> option <span class="loc">bot.ts:168, 593, 605, 609, 620</span></h3>
+  <p>Verified against the installed typings: <code>node_modules/discord.js/typings/index.d.ts:7226-7227</code> marks
+  <code>ephemeral?: boolean</code> as <code>@deprecated — Use InteractionReplyOptions.flags instead</code>
+  (discord.js 14.27.0). Still functional today; removal risk on the next major.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-10 — <code>controlCache</code> grows without eviction <span class="loc">bot.ts:417, 521-545</span></h3>
+  <p>A plain <code>Map</code> with a 15s TTL but no sweep. Entries are refreshed on access and never removed,
+  so the map retains one entry per guild ever seen for the lifetime of the process.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-11 — <code>buildDashboardEmbed</code> is typed <code>| null</code> but never returns <code>null</code> <span class="loc">bot.ts:262-265, 358</span></h3>
+  <pre>function buildDashboardEmbed(payload): { embed; components } | null {
+  ...
+  return { embed, components };   <span class="cm">// no null path exists</span>
+}
+...
+const built = buildDashboardEmbed(event.payload);
+if (!built) return;   <span class="bad">// dead branch — misleading to readers</span></pre>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-12 — <code>stats().flushed</code> counts only the primary sink <span class="loc">bot.ts:492-496</span></h3>
+  <pre>stats: () =&gt; ({
+  buffered: baseSink.stats().buffered + backupSink.stats().buffered,  <span class="cm">// both</span>
+  flushed:  baseSink.stats().flushed,                                 <span class="bad">// primary only</span>
+  failed:   baseSink.stats().failed  + backupSink.stats().failed,     <span class="cm">// both</span>
+}),</pre>
+  <p>Inconsistent aggregation; the flushed metric under-reports once the backup sink starts writing.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-13 — <code>logs.stop()</code> stops only the primary sink <span class="loc">bot.ts:491</span></h3>
+  <p><code>stop: () =&gt; baseSink.stop()</code>. <code>shutdown()</code> compensates by stopping both explicitly
+  (750-751), so there is no leak on the normal path — but the <code>LogSink</code> contract is a trap for any
+  other caller, and on the F-01 path neither sink is stopped at all.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-14 — <code>reason()</code> sanitises the same input twice <span class="loc">bot.ts:210-213</span></h3>
+  <pre>reason(fallback) {
+  return sanitizeReason(interaction.options.getString('reason') ?? undefined) === 'No reason provided'
+    ? (fallback ?? 'No reason provided')
+    : sanitizeReason(interaction.options.getString('reason') ?? undefined);  <span class="bad">// recomputed</span>
+}</pre>
+  <p>Two <code>getString</code> calls and two <code>sanitizeReason</code> invocations per access. Should read the option once into a local.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-15 — Global <code>process.env</code> mutation as an inter-module channel <span class="loc">bot.ts:565</span></h3>
+  <pre>process.env.BOT_COMMANDS_DIR ??= options.commandsDir;</pre>
+  <p>Hidden coupling to the shared <code>/help</code> command. In a multi-bot process the <code>??=</code>
+  would silently give the second bot the first bot's directory. Works today only because PM2 runs one
+  process per bot.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-16 — <code>LOCAL_ONLY</code> is a strict string compare that fails open <span class="loc">bot.ts:378</span></h3>
+  <pre>host: process.env.LOCAL_ONLY === 'true' ? '127.0.0.1' : undefined,  <span class="cm">// undefined → binds 0.0.0.0</span></pre>
+  <p><code>LOCAL_ONLY=1</code>, <code>=TRUE</code> or a trailing space all silently bind the health port to every
+  interface instead of loopback.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-17 — Audit redaction is both over- and under-inclusive <span class="loc">bot.ts:66, 73</span></h3>
+  <ul>
+    <li><strong>Over:</strong> line 66 redacts <em>every</em> <code>http(s)://</code> value, destroying legitimate audit context such as the dashboard URL that produced an action.</li>
+    <li><strong>Under:</strong> the key-name regex (45) only inspects keys. A secret stored under an innocuous key (<code>{ note: "MTA5…" }</code>) is truncated to 512 chars but <strong>not</strong> redacted.</li>
+  </ul>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-18 — <code>unlimitedCommands</code> bypasses the limiter entirely <span class="loc">bot.ts:644-655</span></h3>
+  <p>Any command listed is exempt from <code>enforceRateLimit</code>. Cyrene marks
+  <code>['userinfo','serverinfo','about','help']</code> unlimited (<code>bots/cyrene/src/index.ts:13</code>);
+  the mechanism is fine, but the exemption is absolute — a future expensive command added to that list
+  becomes an unthrottled abuse vector with no second line of defence.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-19 — Health endpoint discloses identity before deps are wired <span class="loc">health.ts:132-135</span></h3>
+  <pre>if (!runtimeDeps) {
+  send(200, JSON.stringify({ status: 'starting', bot_id: options.botId, version: options.version }));
+}</pre>
+  <p>Unauthenticated callers normally receive only <code>{status}</code>; during the startup window they
+  additionally get <code>bot_id</code> and <code>version</code>.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-20 — <code>cachedHealth</code> is module-global, not per-server <span class="loc">health.ts:46-47, 169-172</span></h3>
+  <p>One <code>let cachedHealth</code> at module scope is shared by every <code>startHealthServer</code> call in
+  a process. <code>setDependencies</code> clears it, which masks the problem in production (one server per
+  process) but makes concurrent instances in tests cross-contaminate.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-21 — DM commands bypass guild authorization and pause state by design <span class="loc">bot.ts:631, 636</span></h3>
+  <pre>if (guildId !== 'dm' &amp;&amp; !(await services.isAuthorized(guildId))) { ... }
+if (guildId !== 'dm') { const state = await services.getControlState(guildId); ... }</pre>
+  <p>Intentional (guild gating cannot apply to DMs), but it means a paused or de-authorized guild's members
+  can still invoke commands from a DM. Worth an explicit decision rather than an implicit one.</p>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">Low</span> F-22 — Health server is bound from a stale env snapshot <span class="loc">bot.ts:374-383 ↔ 399-400, 443</span></h3>
+  <p>The server binds using <code>bootstrapEnv</code> (port, botId, version) but is then given
+  <code>healthDeps</code> built from the post-hydration <code>env</code>. If vault hydration changes
+  <code>PORT</code>, <code>BOT_ID</code> or <code>BOT_VERSION</code>, the bound port and the reported
+  identity disagree with each other.</p>
+</div>
+
+<h2>3 · Lost Points / Weak Areas</h2>
+<div class="card">
+  <div class="lbl">Test coverage gaps</div>
+  <ul>
+    <li><code>bot-shutdown.test.ts</code> exercises only the two exported helpers in isolation
+      (<code>withShutdownTimeout</code>, <code>assertStartupActive</code>). It never drives
+      <code>createBot</code>, so <strong>F-01 and F-02 are structurally invisible to the suite</strong> —
+      the tests assert the guard works, not that teardown happens.</li>
+    <li>No test covers the button-interaction branch (590–623) at all, including the
+      <code>interaction.message.author</code> access in F-03.</li>
+    <li>No test asserts <code>buildDashboardEmbed</code> bounds or the empty-embed case (F-08).</li>
+    <li>No test asserts the reconnect loop's concurrency behaviour (F-04).</li>
+  </ul>
+
+  <div class="lbl">Error-handling and observability</div>
+  <ul>
+    <li><code>renderFailure</code> (220–240) never logs — it relies entirely on <code>guard</code> upstream, so the terminal branch at 239 tells the user "reported automatically" with no local evidence.</li>
+    <li>Startup failures are asymmetric: vault hydration failures are swallowed and degraded (385–395), while database failures are silent (they return <code>null</code>). Only <code>login()</code> failures are loud.</li>
+    <li>No <code>Events.Warn</code> / <code>Events.ShardError</code> listener — gateway warnings are invisible.</li>
+    <li><code>installProcessGuards</code> and <code>initSentry</code> are wired at 403–404, <em>after</em> the port binds and after hydration, so early-startup faults are never reported to Sentry.</li>
+  </ul>
+
+  <div class="lbl">Design / readability</div>
+  <ul>
+    <li><code>createBot</code> is a single 425-line function holding ~20 mutable bindings. The shutdown and reconnect closures over <code>mongoHandle</code> / <code>shuttingDown</code> are the direct source of F-01 and F-04; extracting a small lifecycle state object would make both impossible to write.</li>
+    <li><code>CreateBotOptions.setup</code> (98) has a four-way union return type that is hard to read at the call site.</li>
+    <li>Two loggers coexist (<code>bootstrapLog</code> 375, <code>log</code> 401) with no clear handoff contract.</li>
+    <li><code>safeUrl</code> (246-255) accepts <code>http:</code> for <code>image</code>/<code>thumbnail</code>, which Discord generally requires to be HTTPS.</li>
+  </ul>
+</div>
+
+<h2>4 · Root Cause Analysis</h2>
+<div class="card">
+  <table>
+    <tr><th>ID</th><th>Root cause</th><th>Why it matters</th></tr>
+    <tr>
+      <td><strong>F-01</strong></td>
+      <td>One boolean (<code>shuttingDown</code>) is doing two jobs: <em>"a shutdown was requested"</em> and <em>"teardown has already run"</em>. The early signal trap sets the first; the idempotency guard reads it as the second.</td>
+      <td>Conflating a request flag with a completion flag is the classic idempotency bug. Any signal during startup poisons the flag and permanently disables the very cleanup the catch block was written to perform.</td>
+    </tr>
+    <tr>
+      <td><strong>F-02</strong></td>
+      <td>Startup cancellation and startup failure funnel into one <code>catch</code> that always rethrows.</td>
+      <td>Exit code is the only signal a supervisor has. Reporting a clean, requested shutdown as a crash corrupts deploy status and alerting, and trains operators to ignore failures.</td>
+    </tr>
+    <tr>
+      <td><strong>F-03</strong></td>
+      <td>The button branch was added above the existing <code>try</code> without being wrapped in its own.</td>
+      <td>Discord's partial-message model means <code>.author</code> is legitimately nullable. Treating a documented nullable as always-present converts an edge case into an unhandled rejection.</td>
+    </tr>
+    <tr>
+      <td><strong>F-04</strong></td>
+      <td>The interval checks <em>state</em> (<code>!mongoHandle</code>) but never <em>intent</em> (is a connect already running?).</td>
+      <td>Polling loops must dedupe on in-flight work, not just on the resulting state. Without it, slow operations overlap and the last writer wins, orphaning the earlier resource.</td>
+    </tr>
+    <tr>
+      <td><strong>F-05</strong></td>
+      <td>An authorization identifier was written as a literal instead of configuration.</td>
+      <td>Privilege identifiers must be rotatable without a code deploy; duplicating them across three layers guarantees eventual drift.</td>
+    </tr>
+    <tr>
+      <td><strong>F-06</strong></td>
+      <td>Two independent awaits written in sequence rather than composed with <code>Promise.all</code>.</td>
+      <td>Serialising independent I/O multiplies worst-case latency, and here it lands directly in the deploy-critical startup path.</td>
+    </tr>
+    <tr>
+      <td><strong>F-07</strong></td>
+      <td>Schema preparation was placed inside the transport retry boundary.</td>
+      <td>Retrying a non-retryable error is worse than failing: it burns the retry budget, mislabels the fault class, and produces a permanently degraded service that looks like a network problem.</td>
+    </tr>
+    <tr>
+      <td><strong>F-08</strong></td>
+      <td>Validation was applied per-field (bounds on each value) but never at the object level (is the result non-empty?).</td>
+      <td>Field-level bounds do not imply a valid composite. An all-optional builder needs one final "did we set anything?" assertion.</td>
+    </tr>
+    <tr>
+      <td><strong>F-09</strong></td>
+      <td>Code predates the discord.js 14.14+ <code>flags</code> migration.</td>
+      <td>Deprecated-but-working APIs are cheap to fix now and expensive to fix during a forced upgrade.</td>
+    </tr>
+    <tr>
+      <td><strong>F-10–F-22</strong></td>
+      <td>Accumulated small oversights: unbounded caches, dead branches, inconsistent aggregation, global state, strict string compares.</td>
+      <td>Individually minor; collectively they raise the cost of every future change and hide real faults in noise.</td>
+    </tr>
+  </table>
+</div>
+
+<h2>5 · Solutions &amp; Recommendations</h2>
+
+<div class="card find high">
+  <h3><span class="sev s-high">F-01</span> Split the request flag from the completion flag</h3>
+  <p>Introduce a dedicated teardown guard so a cancelled startup still tears down, while double-shutdown
+  stays impossible:</p>
+  <pre>let shuttingDown = false;      <span class="cm">// "a shutdown was requested" (set by the early trap)</span>
+let teardownStarted = false;   <span class="cm">// "cleanup has run" (set only by shutdown)</span>
+
+const shutdown = async (signal: string): Promise&lt;void&gt; =&gt; {
+  if (teardownStarted) return;   <span class="good">// idempotent on the right flag</span>
+  teardownStarted = true;
+  shuttingDown = true;
+  log.info({ signal }, 'shutting down');
+  <span class="cm">// ...unchanged body...</span>
+};</pre>
+  <p>Add a regression test that actually drives the path rather than the helper:</p>
+  <pre>it('runs teardown when startup was cancelled by a signal', async () =&gt; {
+  <span class="cm">// arrange a createBot whose mongo connect hangs, fire SIGTERM mid-startup,</span>
+  <span class="cm">// then assert baseSink.stop() / server.close() were invoked and no throw escaped.</span>
+});</pre>
+</div>
+
+<div class="card find high">
+  <h3><span class="sev s-high">F-02</span> Distinguish cancellation from failure; exit 0 on a clean shutdown</h3>
+  <pre>try {
+  assertStartupActive(shuttingDown);
+  const cleanup = await options.setup?.({ client, services, log, env });
+  setupCleanup = typeof cleanup === 'function' ? cleanup : undefined;
+  assertStartupActive(shuttingDown);
+  await client.login(env.discordToken);
+} catch (err) {
+  await shutdown('BOOTSTRAP_FAIL');
+  <span class="good">// A requested shutdown is not a failure.</span>
+  if (shuttingDown &amp;&amp; !(err instanceof Error &amp;&amp; err.message === 'startup cancelled by shutdown')) {
+    throw err;
+  }
+  return <span class="cm">/* never reached: process is exiting */</span>;
+}</pre>
+  <p>Cleaner still: give <code>assertStartupActive</code> a dedicated sentinel error class
+  (<code>StartupCancelledError</code>) and branch on <code>instanceof</code> instead of a message
+  comparison. Then call <code>process.exit(0)</code> after teardown on that branch so supervisors see a
+  clean, intentional stop.</p>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">F-03</span> Guard the partial and wrap the branch</h3>
+  <pre><span class="good">// 1. Null-safe access</span>
+const messageAuthorId = interaction.message.author?.id ?? null;
+...
+messageAuthorId !== client.user?.id ||
+
+<span class="good">// 2. Wrap the whole button branch (590-623) in try/catch</span>
+if (interaction.isButton()) {
+  try {
+    <span class="cm">// ...existing body...</span>
+  } catch (err) {
+    log.error({ err }, 'guild authorization button handler failed');
+    await interaction.reply({ content: 'Something went wrong.', ephemeral: true })
+      .catch(() =&gt; undefined);
+  }
+  return;
+}</pre>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">F-04</span> Dedupe on intent, and close any superseded handle</h3>
+  <pre>const inFlight = new Set&lt;'primary' | 'secondary'&gt;();
+
+const launchReconnect = (slot, connect, assign, label) =&gt; {
+  if (inFlight.has(slot)) return;          <span class="good">// already connecting</span>
+  inFlight.add(slot);
+  const pending = connect()
+    .then(async (handle) =&gt; {
+      if (!handle) return;
+      if (shuttingDown) { await handle.client.close().catch(() =&gt; undefined); return; }
+      <span class="good">// never orphan a previously-assigned handle</span>
+      const previous = slot === 'primary' ? mongoHandle : secondaryMongoHandle;
+      if (previous &amp;&amp; previous !== handle) {
+        await previous.client.close().catch(() =&gt; undefined);
+      }
+      assign(handle);
+      log.info(`${label} mongodb reconnected`);
+    })
+    .catch((err) =&gt; log.error({ err }, `${label} mongodb reconnect failed`))
+    .finally(() =&gt; inFlight.delete(slot));
+  reconnecting.add(pending);
+  void pending.finally(() =&gt; reconnecting.delete(pending));
+};</pre>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">F-05</span> Move the operator ID into validated configuration</h3>
+  <pre><span class="cm">// env.ts — alongside the existing ownerIds</span>
+masterDiscordId: optString,   <span class="cm">// MASTER_DISCORD_ID</span>
+
+<span class="cm">// bot.ts:44 — delete the literal, then at the guard:</span>
+if (interaction.user.id !== env.masterDiscordId) { ... }</pre>
+  <p>Point <code>dashboard/lib/authz.ts</code> and the SQL helper at the same value, and keep the hardcoded
+  ID only as a documented fallback during migration.</p>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">F-06</span> Connect both databases concurrently</h3>
+  <pre>const [primary, secondary] = await Promise.all([
+  connectMongo(env, log),
+  connectSecondaryMongo(env, log),
+]);
+mongoHandle = primary;
+secondaryMongoHandle = secondary;</pre>
+  <p>Halves the worst-case startup block (~54s → ~27s). Both functions already return <code>null</code>
+  instead of throwing, so <code>Promise.all</code> cannot reject here.</p>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">F-07</span> Separate schema preparation from transport retry</h3>
+  <pre>try {
+  await client.connect();
+} catch (err) {
+  <span class="cm">// retry only the transport</span>
+}
+
+const collections = buildCollections(db);
+try {
+  await ensureIndexes(collections);
+} catch (err) {
+  <span class="cm">// connected but unindexed: usable, and a different failure class.</span>
+  log.error({ err }, 'index bootstrap failed — continuing with an unindexed database');
+}
+return { client, db, collections };   <span class="good">// do not discard a live connection</span></pre>
+</div>
+
+<div class="card find med">
+  <h3><span class="sev s-med">F-08</span> Reject an embed with nothing in it</h3>
+  <pre>const hasContent =
+  Boolean(title || description || url || footer || thumbnail || image || author) ||
+  fields.length &gt; 0;
+
+if (!hasContent) return null;   <span class="good">// makes the `| null` type honest and the 358 check live</span>
+return { embed, components: ... };</pre>
+</div>
+
+<div class="card find low">
+  <h3><span class="sev s-low">F-09 – F-22</span> Smaller fixes</h3>
+  <ul>
+    <li><strong>F-09</strong> Replace <code>{ ephemeral: true }</code> with
+      <code>{ flags: MessageFlags.Ephemeral }</code> at 168, 593, 605, 609, 620 (and the same pattern in <code>responses.ts</code>).</li>
+    <li><strong>F-10</strong> Sweep <code>controlCache</code> on write, or bound it (delete expired entries when <code>size &gt; N</code>).</li>
+    <li><strong>F-11</strong> Drop <code>| null</code> from the return type, or implement the F-08 empty check so the branch is real.</li>
+    <li><strong>F-12</strong> Sum <code>flushed</code> across both sinks.</li>
+    <li><strong>F-13</strong> Make <code>logs.stop()</code> stop both sinks, so the contract matches shutdown.</li>
+    <li><strong>F-14</strong> Read the option once: <code>const raw = sanitizeReason(interaction.options.getString('reason') ?? undefined);</code></li>
+    <li><strong>F-15</strong> Pass the commands directory explicitly into the command context instead of <code>process.env</code>.</li>
+    <li><strong>F-16</strong> Accept truthy forms: <code>['true','1','yes'].includes(String(process.env.LOCAL_ONLY).toLowerCase())</code>.</li>
+    <li><strong>F-17</strong> Narrow the URL redaction to credential-bearing schemes (<code>mongodb</code>, <code>postgres</code>, <code>redis</code>) and add a value-level token heuristic (<code>/^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\./</code> for Discord tokens).</li>
+    <li><strong>F-18</strong> Give unlimited commands a much higher limiter instead of none.</li>
+    <li><strong>F-19</strong> Return <code>{status:'starting'}</code> only, without <code>bot_id</code>/<code>version</code>.</li>
+    <li><strong>F-20</strong> Move <code>cachedHealth</code> inside <code>startHealthServer</code>'s closure.</li>
+    <li><strong>F-21</strong> Make the DM bypass explicit in a comment and confirm it is intended for every command.</li>
+    <li><strong>F-22</strong> Rebuild the health binding from the post-hydration env, or document that <code>PORT</code>/<code>BOT_ID</code> must be bootstrap-only.</li>
+  </ul>
+</div>
+
+<h2>6 · Priority Ranking</h2>
+<div class="card">
+  <table>
+    <tr><th>Priority</th><th>IDs</th><th>Count</th><th>Rationale / when to fix</th></tr>
+    <tr>
+      <td><span class="sev s-crit">Critical</span></td>
+      <td>—</td><td>0</td>
+      <td>No unauthenticated bypass, credential exposure, or data-corruption path found in this file. The authorization gate (592), guild check (631) and control-state check (638) are all correctly ordered and fail closed.</td>
+    </tr>
+    <tr>
+      <td><span class="sev s-high">High</span></td>
+      <td>F-01, F-02</td><td>2</td>
+      <td>Both are in the shutdown path and both cause observable production symptoms (lost audit logs, spurious crash status). Small, self-contained, low-risk patches. <strong>Fix before the next deploy.</strong></td>
+    </tr>
+    <tr>
+      <td><span class="sev s-med">Medium</span></td>
+      <td>F-03, F-04, F-05, F-06, F-07, F-08</td><td>6</td>
+      <td>Real defects with bounded blast radius. F-03 and F-04 are robustness bugs that surface only under partial caches and network stalls; F-06 is a straight startup-latency win; F-07 protects availability against bad data. <strong>Next sprint.</strong></td>
+    </tr>
+    <tr>
+      <td><span class="sev s-low">Low</span></td>
+      <td>F-09 … F-22</td><td>14</td>
+      <td>Hygiene, deprecation and observability. Batch them into one cleanup pass rather than 14 separate changes.</td>
+    </tr>
+  </table>
+</div>
+
+<h2>7 · Summary Report</h2>
+<div class="card">
+  <div class="grid">
+    <div class="stat"><div class="n">22</div><div class="l">Findings</div></div>
+    <div class="stat"><div class="n">0 / 2 / 6 / 14</div><div class="l">Crit / High / Med / Low</div></div>
+    <div class="stat"><div class="n">789</div><div class="l">Lines audited</div></div>
+    <div class="stat"><div class="n">PASS</div><div class="l">Typecheck</div></div>
+  </div>
+
+  <h3>Overall assessment</h3>
+  <p><strong>Solid, security-conscious engineering with a weak lifecycle layer.</strong> This is not a
+  neglected file. The defensive choices are deliberate and mostly correct: strict option sanitisation,
+  fail-closed authorization ordering, embed field bounds that match Discord's caps, a redaction pass over
+  audit metadata, TLS enforcement for Mongo, batched log writes to protect a free-tier write cap, and a
+  health endpoint that separates liveness from readiness — the fix that made Render deploys viable.
+  Verified non-issues were checked rather than assumed (the <code>servers</code> table exists; the
+  pre-<code>setDependencies</code> window is handled; <code>connectMongo</code> cannot throw; the
+  redaction regex is stateless).</p>
+
+  <p>The weakness is concentrated in one place: <code>createBot</code> is a 425-line function whose
+  shutdown and reconnect logic share mutable state across long-lived closures. <strong>Both High findings
+  and F-04 are the same underlying mistake</strong> — a flag or a timer standing in for explicit lifecycle
+  state. F-01 and F-02 are especially instructive because they are mutually reinforcing: the code that
+  was written to guarantee cleanup is disarmed by the very signal it is meant to handle, and then reports
+  the resulting exit as a crash.</p>
+
+  <p>The testing story explains why these survived. <code>bot-shutdown.test.ts</code> tests the helpers,
+  not the behaviour — it proves <code>assertStartupActive(true)</code> throws, which is the mechanism
+  <em>causing</em> the bug, not the outcome the comment promises. The suite is green and the defect is
+  real, which is the signature of unit tests asserting implementation rather than behaviour.</p>
+
+  <h3>Prioritized action plan</h3>
+  <table>
+    <tr><th>#</th><th>Action</th><th>Findings</th><th>Done when</th></tr>
+    <tr><td>1</td><td>Split <code>shuttingDown</code> into request + teardown flags</td><td>F-01</td>
+      <td>A SIGTERM during startup closes the server, stops both sinks and closes both Mongo clients</td></tr>
+    <tr><td>2</td><td>Stop rethrowing on the cancellation path; exit 0 after clean teardown</td><td>F-02</td>
+      <td>An operator restart yields exit code 0 and no crash alert</td></tr>
+    <tr><td>3</td><td>Add an integration test that drives <code>createBot</code> through a mid-startup signal</td><td>F-01, F-02</td>
+      <td>Both fixes are regression-locked; the test fails against the current code</td></tr>
+    <tr><td>4</td><td>Null-guard <code>interaction.message.author</code> and wrap the button branch</td><td>F-03</td>
+      <td>A button interaction with an uncached message replies gracefully instead of throwing</td></tr>
+    <tr><td>5</td><td>Dedupe reconnects on an in-flight set; close superseded handles</td><td>F-04</td>
+      <td>No more than one connect per slot is ever in flight</td></tr>
+    <tr><td>6</td><td><code>Promise.all</code> the two Mongo connects</td><td>F-06</td>
+      <td>Worst-case startup block halves to ~27s</td></tr>
+    <tr><td>7</td><td>Move <code>ensureIndexes</code> out of the transport retry</td><td>F-07</td>
+      <td>An index failure logs distinctly and leaves the bot connected</td></tr>
+    <tr><td>8</td><td>Reject empty embeds; move the operator ID to env</td><td>F-08, F-05</td>
+      <td>No 400s from the dashboard relay; the operator ID is rotatable without a deploy</td></tr>
+    <tr><td>9</td><td>Batch the Low findings into one hygiene commit</td><td>F-09 … F-22</td>
+      <td>Deprecation warnings gone, metrics consistent, caches bounded</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>Structural recommendation.</strong> Items 1, 2 and 5 are all symptoms of the same design
+    pressure: lifecycle state living as loose <code>let</code> bindings captured by closures inside one
+    very long function. Extracting a small <code>BotLifecycle</code> object that owns
+    <code>state</code>, <code>server</code>, both Mongo handles and the reconnect timer — with explicit
+    <code>requestStop()</code> / <code>teardown()</code> methods — would make F-01 and F-04
+    unrepresentable rather than merely fixed. Worth doing when this file is next touched for real,
+    not as a standalone refactor.
+  </div>
+</div>
+
+<footer>
+  Audit board generated 2026-09-13 · Paradise Engine · <code>packages/shared/src/bot.ts</code> @ sha256 77de13b7…3200ab · read-only, nothing committed
+</footer>
+
+</div>
+</body>
+</html>

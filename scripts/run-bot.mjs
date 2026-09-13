@@ -13,7 +13,8 @@ import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveGroqAutomodKey } from './credential-keys.mjs';
+import { createBotChildEnv } from './bot-env.mjs';
+import { resolveCredential } from './credential-keys.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const raw = readFileSync(path.join(ROOT, 'temp cred.txt'), 'utf8');
@@ -29,7 +30,13 @@ const field = (src, key) => {
   const m = src.match(new RegExp(`${key}="?([^\\n"]+?)"?\\s*$`, 'm'));
   return m ? m[1].trim() : null;
 };
-const kv = (key) => field(raw, key);
+const kv = (key) => process.env[key]?.trim() || field(raw, key);
+const credential = (name, descriptive) => resolveCredential({
+  raw,
+  name,
+  environment: process.env[name],
+  descriptive,
+});
 const grab = (re) => raw.match(re)?.[1] ?? '';
 
 const BOT_IDS = ['shanks','sanji','zoro','boahancock','nami','luffy','niko-robin','cyrene'];
@@ -51,12 +58,18 @@ function botSection(botId) {
 
 function buildEnv(botId, port) {
   const sec = botSection(botId);
-  const required = { token: 'token', clientId: 'application id', hmac: 'HMAC_SECRET', healthToken: 'HEALTH_TOKEN', embedColor: 'EMBED_COLOR' };
+  const required = {
+    token: ['DISCORD_TOKEN', 'token'],
+    clientId: ['DISCORD_CLIENT_ID', 'application id'],
+    hmac: ['HMAC_SECRET', 'HMAC_SECRET'],
+    healthToken: ['HEALTH_TOKEN', 'HEALTH_TOKEN'],
+    embedColor: ['EMBED_COLOR', 'EMBED_COLOR'],
+  };
   const vals = {};
-  for (const [k, credKey] of Object.entries(required)) {
-    const v = field(sec, credKey);
-    if (!v) throw new Error(`cred file: ${botId} missing ${credKey}`);
-    vals[k] = v;
+  for (const [k, [name, label]] of Object.entries(required)) {
+    const value = resolveCredential({ raw: sec, name, environment: process.env[name], descriptive: new RegExp(`${label}=?\\s*([^\\n]+)`, 'i') });
+    if (!value) throw new Error(`cred file: ${botId} missing ${label}`);
+    vals[k] = value;
   }
   const MONGO_PRIMARY = section('#\\s*primary mongo db');
   const MONGO_SECONDARY = section('#\\s*mongodb 2');
@@ -90,29 +103,33 @@ function buildEnv(botId, port) {
     // leaves the feature disabled, never a boot failure). Parsed in-process,
     // injected straight into the child env, never printed or persisted.
     ...(botId === 'cyrene' && {
-      GROQ_API_KEY: process.env.GROQ_API_KEY || kv('GROQ_API_KEY') || grab(/"gpt oss"\s*=\s*(\S+)/),
-      MISTRAL_API_KEY: process.env.MISTRAL_API_KEY || kv('MISTRAL_API_KEY') || grab(/"Ministral 3 8B"\s*=\s*(\S+)/),
-      GEMINI_API_KEY: process.env.GEMINI_API_KEY || kv('GEMINI_API_KEY') || '',
-      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || kv('OPENROUTER_API_KEY') || '',
+      GROQ_API_KEY: credential('GROQ_API_KEY', /"gpt oss"\s*=\s*(\S+)/),
+      MISTRAL_API_KEY: credential('MISTRAL_API_KEY', /"Ministral 3 8B"\s*=\s*(\S+)/),
+      GEMINI_API_KEY: credential('GEMINI_API_KEY'),
+      OPENROUTER_API_KEY: credential('OPENROUTER_API_KEY'),
+      AGNES_IMAGE_API_KEY: credential('AGNES_IMAGE_API_KEY'),
       CYRENE_MODEL: process.env.CYRENE_MODEL || kv('CYRENE_MODEL') || 'openai/gpt-oss-20b',
       ASSISTANT_MODEL: process.env.ASSISTANT_MODEL || kv('ASSISTANT_MODEL') || 'ministral-8b-latest',
+      AGNES_IMAGE_MODEL: process.env.AGNES_IMAGE_MODEL || kv('AGNES_IMAGE_MODEL') || 'agnes-image-2.5-flash',
+      CYRENE_TTS_MODEL: process.env.CYRENE_TTS_MODEL || kv('CYRENE_TTS_MODEL') || '',
+      CYRENE_TTS_VOICE: process.env.CYRENE_TTS_VOICE || kv('CYRENE_TTS_VOICE') || '',
     }),
     ...(botId === 'shanks' && {
-      NVIDIA_NIM_API_KEY: process.env.NVIDIA_NIM_API_KEY || kv('NVIDIA_NIM_API_KEY') || grab(/nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/),
-      CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY || kv('CEREBRAS_API_KEY') || grab(/"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
+      NVIDIA_NIM_API_KEY: credential('NVIDIA_NIM_API_KEY', /nemotron-3\.5-content-safety" on nvidia nim\s*=\s*(\S+)/),
+      CEREBRAS_API_KEY: credential('CEREBRAS_API_KEY', /"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
       SECURITY_SLM_MODEL: process.env.SECURITY_SLM_MODEL || kv('SECURITY_SLM_MODEL') || 'nvidia/nemotron-3.5-content-safety',
       SECURITY_SLM_FALLBACK_MODEL: process.env.SECURITY_SLM_FALLBACK_MODEL || kv('SECURITY_SLM_FALLBACK_MODEL') || 'qwen-3.8-27b',
     }),
     ...(botId === 'zoro' && {
-      GROQ_AUTOMOD_API_KEY: resolveGroqAutomodKey({
-        explicit: process.env.GROQ_AUTOMOD_API_KEY || kv('GROQ_AUTOMOD_API_KEY'),
-        normal: process.env.GROQ_API_KEY || kv('GROQ_API_KEY') || grab(/"gpt oss"\s*=\s*(\S+)/),
-      }),
+      CEREBRAS_API_KEY: credential('CEREBRAS_API_KEY', /"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
+      ZORO_SLM_MODEL: process.env.ZORO_SLM_MODEL || kv('ZORO_SLM_MODEL') || 'qwen-3.8-27b',
+      ZORO_SLM_MAX_TOKENS: process.env.ZORO_SLM_MAX_TOKENS || kv('ZORO_SLM_MAX_TOKENS') || '64',
+      ZORO_SLM_CONTEXT_CHARS: process.env.ZORO_SLM_CONTEXT_CHARS || kv('ZORO_SLM_CONTEXT_CHARS') || '2000',
     }),
     ...(botId === 'niko-robin' && {
-      MODELSCOPE_API_KEY: grab(/modelscope Qwen\/Qwen3\.5-35B-A3B = (\S+)/),
-      BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY || kv('BRAVE_SEARCH_API_KEY') || '',
-      SERPAPI_KEY: process.env.SERPAPI_KEY || kv('SERPAPI_KEY') || '',
+      MODELSCOPE_API_KEY: credential('MODELSCOPE_API_KEY', /modelscope Qwen\/Qwen3\.5-35B-A3B = (\S+)/),
+      BRAVE_SEARCH_API_KEY: credential('BRAVE_SEARCH_API_KEY'),
+      SERPAPI_KEY: credential('SERPAPI_KEY'),
     }),
     // Match Render's 512MB free-plan contract: cap the V8 heap so a leak
     // crashes into a visible restart instead of eating the whole machine.
@@ -121,7 +138,7 @@ function buildEnv(botId, port) {
   const requiredEnv = ['BOT_ID', 'BOT_NAME', 'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'HMAC_SECRET', 'HEALTH_TOKEN'];
   const missing = requiredEnv.filter((k) => !own[k]);
   if (missing.length) throw new Error(`empty required env values: ${missing.join(', ')}`);
-  return { ...process.env, ...own };
+  return createBotChildEnv(process.env, own);
 }
 
 const botId = process.argv[2];

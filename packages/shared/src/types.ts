@@ -52,6 +52,8 @@ export interface CommandContext {
   services: BotServices;
   log: Logger;
   guildId: string;
+  /** Command directory for the bot that received this interaction. */
+  commandsDir: string;
   userId: string;
 
   defer(ephemeral?: boolean): Promise<void>;

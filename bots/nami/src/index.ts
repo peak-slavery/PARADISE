@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { Events, GatewayIntentBits, type Client } from 'discord.js';
 import { createBot, isBotOperational, keys, readBotConfig, type BotServices, type MongoCollections } from '@eiflow/shared';
 import { DEFAULT_CONFIG, type LevelUpConfig } from './lib/store.js';
-import { setXpTracker, XpTracker, type LevelUpEvent } from './lib/xp.js';
+import { setXpTracker, XpTracker, chatContentLength, type LevelUpEvent } from './lib/xp.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const commandsDir = path.join(here, 'commands');
@@ -129,7 +129,7 @@ await createBot({
         const verdict = await services.redis.allow(keys.xpDebounce(guildId, userId), 1, CHAT_COOLDOWN_SECONDS);
         if (!verdict.allowed) return;
 
-        tracker.add(guildId, userId, { xp: chatXp(message.content.length), messages: 1 });
+        tracker.add(guildId, userId, { xp: chatXp(chatContentLength(message.content)), messages: 1 });
       } catch (err) {
         log.error({ err, guildId: message.guildId }, 'chat xp handler failed');
       }

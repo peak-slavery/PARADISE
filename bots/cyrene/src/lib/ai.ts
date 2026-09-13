@@ -51,6 +51,25 @@ export interface RunCompletionOptions {
   route: AiRoute;
 }
 
+export function shouldUseEphemeralReply(config: { ephemeral?: boolean }): boolean {
+  return config.ephemeral !== false;
+}
+
+export function withTimeoutFallback<T>(operation: Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: T): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(fallback), timeoutMs);
+    timer.unref?.();
+    operation.then(finish, () => finish(fallback));
+  });
+}
+
 /** Reads and sanitises the `prompt` option shared by /ask and /cyrene. */
 export function readPrompt(ctx: CommandContext): string {
   const raw = ctx.interaction.options.getString('prompt');
@@ -123,10 +142,13 @@ export async function runCompletion(ctx: CommandContext, opts: RunCompletionOpti
   const scope = ROUTE_SCOPE[route];
 
   const prompt = readPrompt(ctx);
-  await ctx.defer(true);
-  const config = await readBotConfig(ctx.services.supabase, ctx.guildId, ctx.services.env.botId, {
-    cyreneModel: '', assistantModel: '', ephemeral: true,
-  });
+  const fallbackConfig = { cyreneModel: '', assistantModel: '', ephemeral: true };
+  const config = await withTimeoutFallback(
+    readBotConfig(ctx.services.supabase, ctx.guildId, ctx.services.env.botId, fallbackConfig),
+    fallbackConfig,
+    1_000,
+  );
+  await ctx.defer(shouldUseEphemeralReply(config));
   const routeEnv = {
     ...ctx.services.env,
     cyreneModel: config.cyreneModel || ctx.services.env.cyreneModel,

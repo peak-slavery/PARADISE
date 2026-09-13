@@ -62,44 +62,96 @@ try {
   } else {
     ok('render.yaml does not declare vault-managed secrets');
   }
-  // Extract the env var list from the &bot-common anchor so per-service
-  // checks can validate that the inherited secrets are present (the YAML
-  // merge expands them into each service, but the literal text only appears
-  // once at the top of the file).
-  const anchorMatch = yaml.match(/&bot-common[\s\S]*?envVars:([\s\S]*?)(?=\n\S|\n#)/);
-  const commonEnvBlock = anchorMatch ? anchorMatch[1] : '';
-  const commonEntries = [...commonEnvBlock.matchAll(/-\s+key:\s+(\S+)[\s\S]*?\n\s+(value:\s+\S+|sync:\s+\S+|generateValue:\s+\S+)/g)]
-    .map((m) => ({ key: m[1], attr: m[2].trim() }));
-  if (commonEntries.length === 0) {
-    bad('render.yaml: could not extract any env entries from the &bot-common anchor');
-  }
-  // Per-service: split on the `- name:` lines and check each block independently.
-  // Each service block is everything between its `- name:` and the next one.
+  // Render replaces envVars arrays during YAML merges, so validate every
+  // service's effective env list directly instead of overlaying the anchor.
   const perServiceErrors = [];
   const serviceStarts = [...yaml.matchAll(/^  - name: (eiflow-[\w-]+)$/gm)].map((m) => ({
     name: m[1],
     start: m.index ?? 0,
   }));
+  const requiredShared = [
+    'NODE_OPTIONS', 'BOT_VERSION', 'OWNER_IDS', 'MONGODB_DB',
+    'MONGODB_SECONDARY_DB', 'LOG_LEVEL', 'REDIS_DAILY_COMMAND_BUDGET',
+    'DASHBOARD_URL', 'DEV_GUILD_ID', 'MAIN_GUILD_ID', 'DEV_AUTH_CHANNEL_ID',
+    'HEALTH_TOKEN', 'SENTRY_DSN',
+  ];
   for (let i = 0; i < serviceStarts.length; i += 1) {
     const { name, start } = serviceStarts[i];
     const end = serviceStarts[i + 1]?.start ?? yaml.length;
     const block = yaml.slice(start, end);
     const blockEntries = [...block.matchAll(/-\s+key:\s+(\S+)[\s\S]*?\n\s+(value:\s+\S+|sync:\s+\S+|generateValue:\s+\S+)/g)]
       .map((m) => ({ key: m[1], attr: m[2].trim() }));
-    const merged = new Map([...commonEntries.map((e) => [e.key, e.attr]), ...blockEntries.map((e) => [e.key, e.attr])]);
-    for (const required of ['BOT_ID', 'BOT_NAME', 'DISCORD_CLIENT_ID', 'EMBED_COLOR']) {
-      if (!merged.has(required)) perServiceErrors.push(`${name} missing ${required} (after merge)`);
+    const entries = new Map(blockEntries.map((entry) => [entry.key, entry.attr]));
+    for (const required of [...requiredShared, 'BOT_ID', 'BOT_NAME', 'DISCORD_CLIENT_ID', 'EMBED_COLOR']) {
+      if (!entries.has(required)) perServiceErrors.push(`${name} missing ${required}`);
     }
     for (const secret of ['DISCORD_TOKEN', 'HMAC_SECRET']) {
-      const attr = merged.get(secret);
+      const attr = entries.get(secret);
       if (attr !== 'sync: false') perServiceErrors.push(`${name} ${secret} must be sync: false (got ${attr ?? 'absent'})`);
     }
   }
   if (perServiceErrors.length === 0) {
-    ok('every service inherits a sync:false DISCORD_TOKEN and HMAC_SECRET from the anchor, and declares BOT_ID/BOT_NAME/CLIENT_ID/EMBED_COLOR');
+    ok('every service declares sync:false DISCORD_TOKEN and HMAC_SECRET, plus shared runtime and bot identity env vars');
   } else {
     for (const m of perServiceErrors) bad(m);
   }
+
+  const serviceBlock = (name) => {
+    const start = yaml.indexOf(`  - name: ${name}`);
+    if (start < 0) return '';
+    const next = yaml.indexOf('\n  - name: ', start + 1);
+    return yaml.slice(start, next < 0 ? yaml.length : next);
+  };
+  const hasEntry = (block, key, value) => {
+    const pattern = value === undefined
+      ? new RegExp(`^\\s+- key: ${key}\\s*$`, 'm')
+      : new RegExp(`^\\s+- key: ${key}\\s*$[\\s\\S]*?^\\s+(?:value|sync): ${value}\\s*$`, 'm');
+    return pattern.test(block);
+  };
+  const contractErrors = [];
+  for (const key of ['CEREBRAS_API_KEY']) {
+    for (const service of ['eiflow-shanks', 'eiflow-zoro']) {
+      if (!hasEntry(serviceBlock(service), key, 'false')) contractErrors.push(`${service} missing sync:false ${key}`);
+    }
+  }
+  const cyrene = serviceBlock('eiflow-cyrene');
+  for (const key of ['GROQ_API_KEY', 'MISTRAL_API_KEY', 'AGNES_IMAGE_API_KEY', 'OPENROUTER_API_KEY']) {
+    if (!hasEntry(cyrene, key, 'false')) contractErrors.push(`eiflow-cyrene missing sync:false ${key}`);
+  }
+  for (const [key, value] of [
+    ['AGNES_IMAGE_MODEL', 'agnes-image-2.5-flash'],
+    ['CYRENE_TTS_MODEL', 'openai/tts-1'],
+    ['CYRENE_TTS_VOICE', 'alloy'],
+  ]) {
+    if (!hasEntry(cyrene, key, value)) contractErrors.push(`eiflow-cyrene missing safe ${key}=${value}`);
+  }
+  const zoro = serviceBlock('eiflow-zoro');
+  for (const [key, value] of [
+    ['ZORO_SLM_MODEL', 'qwen-3.8-27b'],
+    ['ZORO_SLM_MAX_TOKENS', "'64'"],
+    ['ZORO_SLM_CONTEXT_CHARS', "'2000'"],
+  ]) {
+    if (!hasEntry(zoro, key, value)) contractErrors.push(`eiflow-zoro missing safe ${key}=${value}`);
+  }
+  if (contractErrors.length === 0) ok('Render provider and bounded model env contracts are complete');
+  else for (const message of contractErrors) bad(message);
+
+  const staleDeploymentReferences = [
+    'GROQ_' + 'AUTOMOD_API_KEY',
+    'provider.' + 'groq_automod',
+    'AUTOMOD_' + 'SLM_MODEL',
+    'llama-3.1-' + '8b-instant',
+  ];
+  const deploymentFiles = [
+    'render.yaml', '.env.example', 'dashboard/.env.example', 'dashboard/.env.vercel.example',
+    'scripts/run-bot.mjs', 'scripts/deploy-commands-all.mjs', 'scripts/check-local-config.mjs',
+    'scripts/validate-prod-creds.mjs', 'scripts/check-deploy.mjs',
+  ];
+  const stale = deploymentFiles.flatMap((file) => staleDeploymentReferences
+    .filter((reference) => read(file).includes(reference))
+    .map((reference) => `${file} contains removed ${reference}`));
+  if (stale.length === 0) ok('deployment surfaces contain no removed AutoMod-Groq or stale Zoro model references');
+  else for (const message of stale) bad(message);
 } catch (e) {
   bad(`render.yaml unreadable: ${e.message}`);
 }

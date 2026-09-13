@@ -88,19 +88,33 @@ export async function guard<T>(
   }
 }
 
-/** Installs process-level crash nets. A bot must survive anything. */
-export function installProcessGuards(botId: string, log: { error: (o: unknown, m?: string) => void }): void {
-  process.on('unhandledRejection', (reason) => {
+/** Installs process-level crash nets. Fatal errors must let the supervisor restart the bot. */
+export function installProcessGuards(
+  botId: string,
+  log: { error: (o: unknown, m?: string) => void },
+  onFatal: (exitCode: number) => void = (exitCode) => process.exit(exitCode),
+): () => void {
+  const onUnhandledRejection = (reason: unknown) => {
     log.error({ err: reason }, 'unhandledRejection');
     reportError(reason, { botId });
-  });
-
-  process.on('uncaughtException', (err) => {
+    onFatal(1);
+  };
+  const onUncaughtException = (err: Error) => {
     log.error({ err }, 'uncaughtException');
     reportError(err, { botId });
-  });
-
-  process.on('warning', (warn) => {
+    onFatal(1);
+  };
+  const onWarning = (warn: Error) => {
     log.error({ warn: warn.message, stack: warn.stack }, 'processWarning');
-  });
+  };
+
+  process.on('unhandledRejection', onUnhandledRejection);
+  process.on('uncaughtException', onUncaughtException);
+  process.on('warning', onWarning);
+
+  return () => {
+    process.off('unhandledRejection', onUnhandledRejection);
+    process.off('uncaughtException', onUncaughtException);
+    process.off('warning', onWarning);
+  };
 }

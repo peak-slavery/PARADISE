@@ -47,6 +47,10 @@ export interface XpTrackerOptions {
 const SEP = ':';
 const EMPTY_DELTA: XpDelta = { xp: 0, messages: 0, voiceSeconds: 0 };
 
+export function chatContentLength(content: string | null): number {
+  return content?.length ?? 0;
+}
+
 function keyOf(guildId: string, userId: string): string {
   return `${guildId}${SEP}${userId}`;
 }
@@ -207,7 +211,9 @@ export class XpTracker {
       const base = current.get(key) ?? { xp: 0, level: 0 };
       const xp = Math.max(0, base.xp + delta.xp);
       const level = levelForXp(xp);
-      if (level > base.level) levelUps.push({ guildId, userId, level, xp });
+      for (let crossed = base.level + 1; crossed <= level; crossed += 1) {
+        levelUps.push({ guildId, userId, level: crossed, xp });
+      }
 
       ops.push({
         updateOne: {

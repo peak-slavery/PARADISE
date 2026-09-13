@@ -1,33 +1,22 @@
 import type { Env, Logger } from '@eiflow/shared';
 
 /**
- * SLM-assisted bad-word / toxicity detection.
+ * SLM-assisted bad-word / toxicity detection for Zoro.
  *
- * This is the "second opinion" layer: Discord's own AutoMod already flags
- * obvious content. When an `AutoModerationActionExecution` fires we forward
- * the *original* content to a small, fast Groq model and ask it to decide
- * whether the message is actually a slur, threat, sexual content or severe
- * insult — including evasive forms (leetspeak, spacing, unicode) that static
- * word lists miss. The dedicated `GROQ_AUTOMOD_API_KEY` keeps this traffic off
- * the chat quota.
- *
- * Design rules:
- *   - Never throws. A transport/parse failure is a "not bad" verdict, because
- *     failing closed (silently deleting legit speech) is worse than failing
- *     open here — the audit log still records the AutoMod trigger.
- *   - The model is asked for strict JSON only; we parse defensively.
- *   - The API key is never logged, only the model id.
+ * Cerebras is shared with Shanks. This classifier is fail-open: transport,
+ * timeout, HTTP, empty, and parse failures never escalate content.
  */
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const SAFE_MODEL = /^[A-Za-z0-9._:-]{1,100}$/;
+const ENDPOINT = 'https://api.cerebras.ai/v1/chat/completions';
+const MODEL = 'qwen-3.8-27b';
+const MAX_TOKENS = 64;
+const MAX_CONTEXT_CHARS = 2000;
+const TIMEOUT_MS = 6000;
+const CATEGORIES = new Set(['slur', 'hate', 'threat', 'sexual', 'insult', 'none']);
 
 export interface SlmVerdict {
-  /** True when the model judged the content worth escalating. */
   bad: boolean;
-  /** 0..1 confidence reported by the model. */
   confidence: number;
-  /** Short category label for the audit log. */
   category: string;
 }
 
@@ -38,12 +27,7 @@ export interface SlmResult extends SlmVerdict {
 }
 
 export function slmEnabled(env: Env): boolean {
-  return env.hasAutomodSlm;
-}
-
-function safeModel(env: Env): string {
-  const m = env.automodSlmModel?.trim();
-  return m && SAFE_MODEL.test(m) ? m : 'llama-3.1-8b-instant';
+  return env.hasCerebras && Boolean(env.cerebrasApiKey?.trim());
 }
 
 const SYSTEM_PROMPT = [
@@ -53,6 +37,26 @@ const SYSTEM_PROMPT = [
   'Respond with ONLY a JSON object of the form {"bad": boolean, "confidence": number between 0 and 1, "category": "slur"|"hate"|"threat"|"sexual"|"insult"|"none"}.',
 ].join(' ');
 
+/** Parse only the exact JSON object requested from the model. */
+export function parseVerdict(raw: string): SlmVerdict | null {
+  const value = raw.trim();
+  if (!value.startsWith('{') || !value.endsWith('}')) return null;
+
+  try {
+    const obj = JSON.parse(value) as Record<string, unknown>;
+    if (typeof obj.bad !== 'boolean') return null;
+    if (typeof obj.confidence !== 'number' || !Number.isFinite(obj.confidence)) return null;
+    if (typeof obj.category !== 'string' || !CATEGORIES.has(obj.category)) return null;
+    return {
+      bad: obj.bad,
+      confidence: Math.min(1, Math.max(0, obj.confidence)),
+      category: obj.category,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Classify one piece of text. Always resolves — never rejects. */
 export async function classifyContent(
   env: Env,
@@ -60,64 +64,52 @@ export async function classifyContent(
   log: Logger,
   timeoutMs = 6000,
 ): Promise<SlmResult> {
-  const model = safeModel(env);
-  if (!env.hasAutomodSlm || !env.groqAutomodApiKey) {
+  const model = MODEL;
+  const maxTokens = Math.min(MAX_TOKENS, Math.max(1, env.zoroSlmMaxTokens));
+  const contextChars = Math.min(MAX_CONTEXT_CHARS, Math.max(1, env.zoroSlmContextChars));
+  const key = env.cerebrasApiKey?.trim();
+  if (!env.hasCerebras || !key) {
     return { ok: false, bad: false, confidence: 0, category: 'none', model, error: 'slm disabled' };
   }
 
   const body = text.trim();
-  if (body.length === 0) {
+  if (!body) {
     return { ok: false, bad: false, confidence: 0, category: 'none', model, error: 'empty' };
   }
 
   try {
-    const res = await fetch(GROQ_ENDPOINT, {
+    const res = await fetch(ENDPOINT, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${env.groqAutomodApiKey}`,
-      },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: body.slice(0, 2000) },
+          { role: 'user', content: body.slice(0, contextChars) },
         ],
         temperature: 0,
-        max_tokens: 64,
-        response_format: { type: 'json_object' },
+        max_tokens: maxTokens,
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, Math.max(1, timeoutMs))),
     });
 
     if (!res.ok) {
-      return { ok: false, bad: false, confidence: 0, category: 'none', model, error: `groq ${res.status}` };
+      return { ok: false, bad: false, confidence: 0, category: 'none', model, error: `cerebras ${res.status}` };
     }
 
-    const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const raw = json.choices?.[0]?.message?.content ?? '';
-    return { ok: true, ...parseVerdict(raw), model };
+    const json = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+    const raw = json.choices?.[0]?.message?.content;
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return { ok: false, bad: false, confidence: 0, category: 'none', model, error: 'empty response' };
+    }
+    const verdict = parseVerdict(raw);
+    if (!verdict) {
+      return { ok: false, bad: false, confidence: 0, category: 'none', model, error: 'unparseable response' };
+    }
+    return { ok: true, ...verdict, model };
   } catch (err) {
-    log.warn({ err, model }, 'slm classify failed');
-    return { ok: false, bad: false, confidence: 0, category: 'none', model, error: String(err) };
-  }
-}
-
-/** Extracts the first JSON object from arbitrary model output. */
-function parseVerdict(raw: string): SlmVerdict {
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  const fallback: SlmVerdict = { bad: false, confidence: 0, category: 'none' };
-  if (start === -1 || end === -1 || end <= start) return fallback;
-
-  try {
-    const obj = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
-    const bad = obj.bad === true || obj.bad === 'true';
-    const confidence =
-      typeof obj.confidence === 'number' ? Math.min(1, Math.max(0, obj.confidence)) : bad ? 0.8 : 0;
-    const category = typeof obj.category === 'string' ? obj.category.slice(0, 40) : bad ? 'unknown' : 'none';
-    return { bad, confidence, category };
-  } catch {
-    return fallback;
+    const error = err instanceof Error ? err.name : 'request failed';
+    log.warn({ model }, 'slm classify failed');
+    return { ok: false, bad: false, confidence: 0, category: 'none', model, error };
   }
 }

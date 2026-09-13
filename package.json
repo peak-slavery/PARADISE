@@ -21,7 +21,7 @@
     "start": "npm run start -w @eipoint/dashboard",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test scripts/credential-keys.test.mjs scripts/pm2-config.test.mjs && npm run test --workspaces --if-present",
+    "test": "node --test scripts/credential-keys.test.mjs scripts/bot-env.test.mjs scripts/pm2-config.test.mjs scripts/render-config.test.mjs && npm run test --workspaces --if-present",
     "test:local": "node scripts/test-local-stack.mjs",
     "deploy:commands": "node scripts/deploy-commands-all.mjs",
     "check:bots": "node scripts/check-all-bots.mjs",
@@ -45,6 +45,6 @@
     "@typescript-eslint/parser": "^8.8.1",
     "eslint": "^9.13.0",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^5.0.0"
   }
 }

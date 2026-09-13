@@ -16,6 +16,8 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createBotChildEnv } from './bot-env.mjs';
+import { resolveCredential } from './credential-keys.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const raw = readFileSync(path.join(ROOT, 'temp cred.txt'), 'utf8');
@@ -31,6 +33,12 @@ const field = (src, key) => {
   const m = src.match(new RegExp(`${key}="?([^\\n"]+?)"?\\s*$`, 'm'));
   return m ? m[1].trim() : null;
 };
+const credential = (name, descriptive) => resolveCredential({
+  raw,
+  name,
+  environment: process.env[name],
+  descriptive,
+});
 
 const BOTS = ['shanks', 'sanji', 'zoro', 'boahancock', 'nami', 'luffy', 'niko-robin', 'cyrene'];
 const HEADERS = {
@@ -56,8 +64,22 @@ function buildEnv(botId) {
     BOT_NAME: HEADERS[botId],
     MONGODB_DB: 'eiflow',
     LOG_LEVEL: 'error',
+    ...(botId === 'cyrene' && {
+      GROQ_API_KEY: credential('GROQ_API_KEY', /"gpt oss"\s*=\s*(\S+)/),
+      MISTRAL_API_KEY: credential('MISTRAL_API_KEY', /"Ministral 3 8B"\s*=\s*(\S+)/),
+      AGNES_IMAGE_API_KEY: credential('AGNES_IMAGE_API_KEY'),
+      OPENROUTER_API_KEY: credential('OPENROUTER_API_KEY'),
+    }),
+    ...((botId === 'shanks' || botId === 'zoro') && {
+      CEREBRAS_API_KEY: credential('CEREBRAS_API_KEY', /"qwen-3\.8-27b" with limit[^=]*=\s*(\S+)/),
+    }),
+    ...(botId === 'niko-robin' && {
+      MODELSCOPE_API_KEY: credential('MODELSCOPE_API_KEY', /modelscope Qwen\/Qwen3\.5-35B-A3B = (\S+)/),
+      BRAVE_SEARCH_API_KEY: credential('BRAVE_SEARCH_API_KEY'),
+      SERPAPI_KEY: credential('SERPAPI_KEY'),
+    }),
   };
-  return { ...process.env, ...own };
+  return createBotChildEnv(process.env, own);
 }
 
 const only = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;

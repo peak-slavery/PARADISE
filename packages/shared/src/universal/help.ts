@@ -27,7 +27,7 @@ async function listBotCommands(dir: string | undefined): Promise<string[]> {
 }
 
 export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Promise<void> {
-  const botCommands = await listBotCommands(process.env.BOT_COMMANDS_DIR);
+  const botCommands = await listBotCommands(ctx.commandsDir);
   const universal = UNIVERSAL.filter((c) => !botCommands.includes(c));
 
   const botList = botCommands.length ? botCommands.map((c) => `\`/${c}\``).join('  ') : '_none_';

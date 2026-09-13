@@ -37,7 +37,6 @@ export function createLogger(env: Env): Logger {
         '*.geminiApiKey',
         '*.openrouterApiKey',
         '*.mistralApiKey',
-        '*.groqAutomodApiKey',
       ],
       censor: '[redacted]',
     },

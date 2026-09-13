@@ -1,5 +1,5 @@
 import { REST, Routes, type RESTPostAPIApplicationCommandsJSONBody } from 'discord.js';
-import { loadEnv } from './env.js';
+import { loadDeployEnv } from './env.js';
 import { loadAllCommandModules } from './commands.js';
 
 export interface DeployResult {
@@ -16,7 +16,7 @@ export interface DeployResult {
  *  - it would force every command module to load, defeating lazy loading
  */
 export async function registerCommands(dirs: string[], guildId?: string): Promise<DeployResult> {
-  const env = loadEnv();
+  const env = loadDeployEnv();
 
   const seen = new Set<string>();
   const modules = (

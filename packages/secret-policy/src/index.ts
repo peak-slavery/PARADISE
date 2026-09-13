@@ -28,7 +28,7 @@ const EXTRA_MAPPINGS: Record<BotId, readonly (readonly [string, string])[]> = {
     ['provider.cerebras.api_key', 'CEREBRAS_API_KEY'],
   ],
   sanji: [],
-  zoro: [['provider.groq_automod.api_key', 'GROQ_AUTOMOD_API_KEY']],
+  zoro: [['provider.cerebras.api_key', 'CEREBRAS_API_KEY']],
   boahancock: [],
   nami: [],
   luffy: [],
@@ -41,6 +41,7 @@ const EXTRA_MAPPINGS: Record<BotId, readonly (readonly [string, string])[]> = {
     ['provider.groq.api_key', 'GROQ_API_KEY'],
     ['provider.gemini.api_key', 'GEMINI_API_KEY'],
     ['provider.openrouter.api_key', 'OPENROUTER_API_KEY'],
+    ['provider.agnes.api_key', 'AGNES_IMAGE_API_KEY'],
     ['provider.mistral.api_key', 'MISTRAL_API_KEY'],
   ],
 };

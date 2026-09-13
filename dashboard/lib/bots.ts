@@ -35,7 +35,7 @@ export const BOTS: readonly BotMeta[] = [
       { key: 'windowSeconds', label: 'Detection window', type: 'number', default: 60, min: 10, max: 3600, suffix: 's' },
       { key: 'punishment', label: 'Action on trigger', type: 'select', default: 'ban', options: [{ value: 'ban', label: 'Ban actor' }, { value: 'kick', label: 'Kick actor' }, { value: 'stripRoles', label: 'Strip roles' }, { value: 'none', label: 'No punishment' }] },
       { key: 'protectWebhooks', label: 'Watch webhooks', type: 'boolean', default: true },
-      { key: 'automodSlm', label: 'AI content checks', type: 'boolean', default: true, help: 'Requires the dedicated GROQ_AUTOMOD_API_KEY on Zoro.' },
+      { key: 'automodSlm', label: 'AI content checks', type: 'boolean', default: true, help: 'Requires the shared CEREBRAS_API_KEY used by Zoro and Shanks.' },
       { key: 'slmThreshold', label: 'AI confidence threshold', type: 'number', default: 0.75, min: 0, max: 1, step: 0.05 },
       { key: 'lockdownOnRaid', label: 'Lock down on critical raids', type: 'boolean', default: false },
       { key: 'snapshotOnChange', label: 'Snapshot before revert', type: 'boolean', default: true },
@@ -75,8 +75,8 @@ export const BOTS: readonly BotMeta[] = [
   },
   {
     id: 'cyrene', name: 'Cyrene', tagline: 'Your companion beyond the horizon', color: '#B76EFF',
-    description: 'Two separate AI routes: Cyrene through Groq and a neutral assistant through Mistral, each with private conversation history.',
-    commands: ['/ask', '/cyrene', '/model', '/reset'],
+    description: 'Four separate AI routes: Cyrene through Groq, a neutral assistant through Mistral, image generation through Agnes and speech through OpenRouter TTS.',
+    commands: ['/ask', '/cyrene', '/imagine', '/speak', '/model', '/reset'],
     fields: [
       { key: 'cyreneModel', label: 'Cyrene model (Groq)', type: 'text', default: '', placeholder: 'openai/gpt-oss-20b', help: 'Blank uses the runtime model. Model must be available to your provider account.' },
       { key: 'assistantModel', label: 'Assistant model (Mistral)', type: 'text', default: '', placeholder: 'ministral-8b-latest', help: 'Blank uses the runtime model.' },

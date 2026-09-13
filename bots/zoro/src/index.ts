@@ -167,9 +167,9 @@ await createBot({
     /**
      * SLM second-opinion layer. Discord's own AutoMod already flags the obvious
      * stuff; whenever an action *executes* we forward the original content to a
-     * small, fast Groq model and ask whether it is genuinely harmful — including
+     * small, fast Cerebras model and ask whether it is genuinely harmful — including
      * evasive forms (leetspeak, spacing, unicode) static word lists miss. The
-     * dedicated `GROQ_AUTOMOD_API_KEY` keeps this off the chat quota.
+     * shared `CEREBRAS_API_KEY` is used by Zoro and Shanks.
      *
      * We fail OPEN: a transport/parse failure is a "not bad" verdict, and we
      * never punish from here — the classifier only *escalates* (records an
@@ -187,7 +187,7 @@ await createBot({
       const config = await readConfig(services, guild.id).catch(() => null);
       if (!config || !config.enabled || !config.automodSlm) return;
 
-      const result = await classifyContent(env, text, log);
+      const result = await services.queue.run(() => classifyContent(env, text, log), { timeoutMs: 6000, maxPending: 16 });
       if (!result.ok || !result.bad) {
         // Not flagged: a message hit AutoMod's static filter but the SLM judged
         // it benign. That is a clean-behaviour signal we bank toward trust.
@@ -243,7 +243,7 @@ await createBot({
         user_id: execution.userId,
         action: 'automod.slm.flag',
         level: severity === 'high' ? 'error' : 'warn',
-        message: sanitizeText(`${result.category} (${result.confidence.toFixed(2)}) — ${text.slice(0, 200)}`, 512),
+        message: `SLM flagged ${result.category} (${result.confidence.toFixed(2)})`,
         meta: { category: result.category, confidence: result.confidence, ruleTrigger: execution.ruleTriggerType },
         created_at: new Date(),
       });

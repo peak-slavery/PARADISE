@@ -13,7 +13,8 @@ Credentials pasted into chat must be treated as compromised. Before deploying:
 3. Rotate the Upstash Redis token.
 4. Revoke and regenerate the Firebase service-account key.
 5. Revoke and regenerate the Cloudflare API/R2 credentials.
-6. Review provider audit logs for unexpected access.
+6. Rotate every AI and search provider credential listed below, including Groq, Mistral, Cerebras, Agnes, OpenRouter, Brave Search, SerpAPI, Gemini and ModelScope.
+7. Review provider audit logs for unexpected access.
 
 The project should only be provisioned with the newly generated values.
 
@@ -50,6 +51,13 @@ Generate vault key material locally with a cryptographically secure generator:
 Keep both values in an offline password manager backup. Losing the master key
 makes the encrypted records unrecoverable.
 
+Credential rotation and vault seeding are operator-side actions: generate fresh
+values in each provider console, revoke the compromised values, then enter the
+fresh values through the authenticated master-only vault API. Do not paste
+values into this document, commit them, or include them in deployment manifests.
+Provider model names and readiness metadata are safe to document; credential
+values are not.
+
 ## Vault record names
 
 Provision records through the authenticated master-only `PUT /api/secret/<name>`
@@ -80,9 +88,10 @@ Required records:
 | `provider.serpapi.api_key` | `other` | Niko Robin SerpAPI provider |
 | `provider.groq.api_key` | `other` | Cyrene Groq provider |
 | `provider.gemini.api_key` | `other` | Cyrene Gemini provider |
-| `provider.openrouter.api_key` | `other` | Cyrene OpenRouter provider |
-| `provider.mistral.api_key` | `other` | Cyrene Mistral provider |
-| `provider.groq_automod.api_key` | `other` | Zoro AutoMod SLM provider |
+| `provider.openrouter.api_key` | `other` | Cyrene OpenRouter and TTS provider |
+| `provider.agnes.api_key` | `other` | Cyrene Agnes image provider |
+| `provider.mistral.api_key` | `other` | Cyrene assistant provider |
+| `provider.cerebras.api_key` | `other` | Shared Zoro/Shanks content-safety provider |
 | `firebase.admin.service_account` | `firebase` | Full service-account JSON |
 | `firebase.storage.bucket` | `firebase` | Storage bucket, when used |
 | `cloudflare.account_id` | `cloudflare` | Cloudflare account id |
@@ -101,8 +110,8 @@ The signed internal endpoint enforces the same per-bot allowlist:
 | --- | --- | --- |
 | Shanks, Sanji, Boa Hancock, Nami, Luffy | MongoDB, Redis, runtime Supabase | None |
 | Niko Robin | MongoDB, Redis, runtime Supabase | Brave Search, SerpAPI |
-| Cyrene | MongoDB, Redis, runtime Supabase | Groq, Gemini, OpenRouter, Mistral |
-| Zoro | MongoDB, Redis, runtime Supabase | Groq AutoMod SLM |
+| Cyrene | MongoDB, Redis, runtime Supabase | Groq, Gemini, OpenRouter, Agnes, Mistral |
+| Zoro | MongoDB, Redis, runtime Supabase | Cerebras |
 
 Discord tokens are bootstrap credentials and must be configured directly in the
 corresponding Render service; they are never requested through the vault.
@@ -118,14 +127,15 @@ commands, Render's injected `PORT`, and `/health`. Render must
 be given every `sync: false` value for each service, including its unique
 `DISCORD_TOKEN`, `HMAC_SECRET`, `DASHBOARD_URL`, and guild routing values.
 Provider keys should be provisioned as the provider records above rather than
-duplicated in Render. The dashboard URL must be the deployed Vercel origin
+duplicated in Render. The dashboard URL must be the deployed Vercel origin.
 and the dashboard's production `HMAC_SECRETS_JSON` must contain one unique
 strong value for every bot.
 
-Free-plan caveat: each service will spin down after ~15 minutes of inactivity
-and cold-start on the next request. Configure a cron or uptime monitor that
-hits each service's `/health` endpoint every 5–10 minutes to keep the gateway
-connection warm and prevent user-visible disconnects.
+Free-plan caveat: each service may spin down after inactivity and cold-start
+on the next request; it is not a reliable 24/7 tier for Discord gateway
+connections. `/health` proves liveness only, not gateway readiness. Use a paid
+Render tier, VM, or another always-on host for continuous operation. An uptime
+monitor may reduce idle time but does not replace a paid-tier decision.
 
 ### Vercel
 

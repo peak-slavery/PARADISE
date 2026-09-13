@@ -8,7 +8,7 @@ const MAX_SECRET_BYTES = 16 * 1024;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
-const CACHE_TTL_MS = 5 * 60_000;
+const CACHE_TTL_MS = 30_000;
 const NAME_PATTERN = /^[a-z][a-z0-9_.:-]{1,127}$/;
 
 export type SecretProvider = 'mongodb' | 'supabase' | 'redis' | 'firebase' | 'cloudflare' | 'core' | 'other';
@@ -32,6 +32,10 @@ export type SecretMetadata = Omit<SecretRecord, 'ciphertext' | 'iv' | 'auth_tag'
 
 type VaultCacheEntry = { plaintext: string; expiresAt: number };
 const cache = new Map<string, VaultCacheEntry>();
+
+function cacheKey(name: string, rotatedAt: string | undefined): string {
+  return name + ':' + (rotatedAt ?? 'initial');
+}
 
 function envBytes(name: string, expectedBytes: number): Buffer {
   const value = process.env[name]?.trim();
@@ -119,12 +123,16 @@ export async function loadSecretRecord(name: string, client = createSupabaseAdmi
 
 export async function loadSecret(name: string, client = createSupabaseAdminClient()): Promise<string | null> {
   validateName(name);
-  const cached = cache.get(name);
-  if (cached && cached.expiresAt > Date.now()) return cached.plaintext;
   const record = await loadSecretRecord(name, client);
   if (!record) return null;
+  const key = cacheKey(name, record.rotated_at);
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.plaintext;
   const plaintext = openSecret(record);
-  cache.set(name, { plaintext, expiresAt: Date.now() + CACHE_TTL_MS });
+  for (const [existingKey] of cache) {
+    if (existingKey.startsWith(name + ':')) cache.delete(existingKey);
+  }
+  cache.set(key, { plaintext, expiresAt: Date.now() + CACHE_TTL_MS });
   return plaintext;
 }
 

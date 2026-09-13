@@ -84,14 +84,14 @@ export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Pro
 
   if (sub === 'status') {
     const c = await readConfig(ctx.services, ctx.guildId);
-    const slm = ctx.services.env.hasAutomodSlm;
+    const slm = ctx.services.env.hasCerebras;
     await ctx.replyEmbed(
       ctx.services.embeds.brand('Zoro · status', undefined, {
         fields: [
           { name: 'Enabled', value: c.enabled ? 'Yes' : 'No', inline: true },
           { name: 'Mode', value: c.mode, inline: true },
           { name: 'Punishment', value: c.punishment, inline: true },
-          { name: 'SLM engine', value: slm ? `on · ${ctx.services.env.automodSlmModel}` : 'off (no key)', inline: true },
+          { name: 'SLM engine', value: slm ? `on · ${ctx.services.env.zoroSlmModel}` : 'off (no key)', inline: true },
           { name: 'Trust', value: c.trustMode ? 'on' : 'off', inline: true },
           { name: 'Lockdown on raid', value: c.lockdownOnRaid ? 'on' : 'off', inline: true },
           { name: 'Snapshot', value: c.snapshotOnChange ? 'on' : 'off', inline: true },

@@ -40,8 +40,6 @@ describe('health server bootstrap', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       status: 'starting',
-      bot_id: 'cyrene',
-      version: '1.0.0',
     });
   });
 });

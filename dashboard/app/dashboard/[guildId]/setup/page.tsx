@@ -28,7 +28,9 @@ export default async function SetupPage({ params }: { params: Promise<{ guildId:
     { label: 'Connect Upstash Redis (raid sliding window)', done: readiness.items.find((i) => i.key === 'redis')?.ready ?? false },
     { label: 'Add a Mistral key for the AI assistant', done: readiness.items.find((i) => i.key === 'mistral')?.ready ?? false },
     { label: 'Add a Groq key for the Cyrene persona (gpt-oss)', done: readiness.items.find((i) => i.key === 'groqCyrene')?.ready ?? false },
-    { label: 'Add a second Groq key for the AutoMod SLM', done: readiness.items.find((i) => i.key === 'groqAutomod')?.ready ?? false },
+    { label: 'Add the shared Cerebras key for Zoro and Shanks', done: readiness.items.find((i) => i.key === 'cerebrasZoro')?.ready ?? false },
+    { label: 'Configure Agnes image generation', done: readiness.items.find((i) => i.key === 'agnesImage')?.ready ?? false },
+    { label: 'Configure OpenRouter TTS for Cyrene', done: readiness.items.find((i) => i.key === 'tts')?.ready ?? false },
     { label: 'Set a matching HMAC_SECRET on every bot', done: readiness.items.find((i) => i.key === 'hmac')?.ready ?? false },
     { label: 'Arm Zoro in the config panel', done: zoroEnabled },
     { label: 'Set Zoro’s incident alert channel', done: alertSet },
@@ -86,7 +88,7 @@ export default async function SetupPage({ params }: { params: Promise<{ guildId:
       <Panel className="mb-6">
         <PanelHeader
           title="Model routing"
-          description="How the two AI surfaces and the AutoMod SLM map to providers. Each route has its own fallback chain; a missing key pushes the route to the next provider."
+          description="How the four AI surfaces map to providers. Text routes keep their existing fallback chains; media routes report provider and model readiness without exposing credentials."
         />
         <div className="divide-y divide-ink/5">
           {readiness.modelRouting.map((route) => (

@@ -5,6 +5,7 @@
  * output. Prints PASS/FAIL diagnostics only — no secret values.
  */
 import { readFileSync } from 'node:fs';
+import { resolveCredential } from './credential-keys.mjs';
 
 const raw = readFileSync(new URL('../temp cred.txt', import.meta.url), 'utf8');
 const out = [];
@@ -24,7 +25,8 @@ const field = (src, key) => {
   const m = src.match(new RegExp(`${key}="?([^\\n"]+?)"?\\s*$`, 'm'));
   return m ? m[1].trim() : null;
 };
-const kv = (key) => field(raw, key);
+const kv = (key) => process.env[key]?.trim() || field(raw, key);
+const credential = (name, descriptive) => resolveCredential({ raw, name, environment: process.env[name], descriptive });
 const T = (ms = 15_000) => AbortSignal.timeout(ms);
 
 // --- Supabase: service key + REST, and which tables exist ---

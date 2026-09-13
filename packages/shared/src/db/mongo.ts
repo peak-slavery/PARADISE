@@ -173,16 +173,22 @@ export async function connectMongo(env: Env, log: Logger): Promise<MongoHandle |
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       await client.connect();
-      const db = client.db(env.mongodbDb);
-      const collections = buildCollections(db);
-      await ensureIndexes(collections);
-      log.info({ db: env.mongodbDb }, 'mongodb connected');
-      return { client, db, collections };
     } catch (err) {
       lastErr = err;
       log.warn({ err, attempt }, 'mongodb connect failed, retrying');
       await new Promise((r) => setTimeout(r, attempt * 1_000));
+      continue;
     }
+
+    const db = client.db(env.mongodbDb);
+    const collections = buildCollections(db);
+    try {
+      await ensureIndexes(collections);
+    } catch (err) {
+      log.error({ err }, 'mongodb index bootstrap failed — continuing with an unindexed database');
+    }
+    log.info({ db: env.mongodbDb }, 'mongodb connected');
+    return { client, db, collections };
   }
 
   await client.close().catch(() => undefined);
@@ -211,22 +217,31 @@ export async function connectSecondaryMongo(env: Env, log: Logger): Promise<Mong
     minPoolSize: 0,
     serverSelectionTimeoutMS: 8_000,
   });
+
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       await client.connect();
-      const db = client.db(env.mongodbSecondaryDb);
-      const collections = buildCollections(db);
-      await collections.logs.createIndex({ guild_id: 1, created_at: -1 });
-      await collections.logs.createIndex({ created_at: 1 }, { expireAfterSeconds: LOG_TTL_SECONDS });
-      log.info({ db: env.mongodbSecondaryDb }, 'secondary mongodb audit sink connected');
-      return { client, db, collections };
     } catch (err) {
       lastErr = err;
+      log.warn({ err, attempt }, 'secondary mongodb connect failed, retrying');
       await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+      continue;
     }
+
+    const db = client.db(env.mongodbSecondaryDb);
+    const collections = buildCollections(db);
+    try {
+      await collections.logs.createIndex({ guild_id: 1, created_at: -1 });
+      await collections.logs.createIndex({ created_at: 1 }, { expireAfterSeconds: LOG_TTL_SECONDS });
+    } catch (err) {
+      log.error({ err }, 'secondary mongodb index bootstrap failed — continuing with an unindexed audit sink');
+    }
+    log.info({ db: env.mongodbSecondaryDb }, 'secondary mongodb audit sink connected');
+    return { client, db, collections };
   }
+
   await client.close().catch(() => undefined);
-  log.warn({ err: lastErr }, 'secondary mongodb unavailable — continuing without audit backup');
+  log.error({ err: lastErr }, 'secondary mongodb audit sink unavailable — backup logging disabled');
   return null;
 }

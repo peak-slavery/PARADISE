@@ -26,10 +26,10 @@ export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Pro
     await ctx.replyEmbed(
       ctx.services.embeds.info(
         'SLM status',
-        slmEnabled(env) ? 'The AutoMod SLM is online.' : 'The AutoMod SLM is disabled (no GROQ_AUTOMOD_API_KEY).',
+        slmEnabled(env) ? 'The AutoMod SLM is online.' : 'The AutoMod SLM is disabled (no CEREBRAS_API_KEY).',
         {
           fields: [
-            { name: 'Model', value: env.automodSlmModel, inline: true },
+            { name: 'Model', value: env.zoroSlmModel, inline: true },
             { name: 'Enabled in config', value: c.automodSlm ? 'Yes' : 'No', inline: true },
             { name: 'Threshold', value: `${(c.slmThreshold * 100).toFixed(0)}%`, inline: true },
           ],
@@ -41,9 +41,9 @@ export async function execute(ctx: Parameters<CommandModule['execute']>[0]): Pro
 
   const text = ctx.interaction.options.getString('text');
   if (!text) throw new UserError('Provide text to classify.');
-  if (!slmEnabled(env)) throw new UserError('The SLM is not configured — set GROQ_AUTOMOD_API_KEY.');
+  if (!slmEnabled(env)) throw new UserError('The SLM is not configured — set CEREBRAS_API_KEY.');
 
-  const res = await classifyContent(env, text, ctx.log);
+  const res = await ctx.services.queue.run(() => classifyContent(env, text, ctx.log), { timeoutMs: 6000, maxPending: 16 });
   const embed = res.bad
     ? ctx.services.embeds.error('SLM verdict', `Model **${res.model}** flagged this as harmful.`, {
         fields: [

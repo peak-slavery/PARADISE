@@ -4,7 +4,7 @@ vi.mock('discord.js', () => ({
   REST: class { setToken() { return this; } get = mocks.get; put = mocks.put; },
   Routes: { oauth2CurrentApplication: () => '/application', applicationCommands: () => '/global', applicationGuildCommands: () => '/guild' },
 }));
-vi.mock('./env.js', () => ({ loadEnv: () => ({ botId: 'shanks', discordToken: 'test-token', discordClientId: '123' }) }));
+vi.mock('./env.js', () => ({ loadDeployEnv: () => ({ botId: 'shanks', discordToken: 'test-token', discordClientId: '123' }) }));
 vi.mock('./commands.js', () => ({ loadAllCommandModules: async () => [{ data: { toJSON: () => ({ name: 'help' }) } }] }));
 import { registerCommands } from './deploy.js';
 

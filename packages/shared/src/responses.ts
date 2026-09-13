@@ -1,4 +1,4 @@
-import { DiscordAPIError, type Channel, type CommandInteraction, type EmbedBuilder } from 'discord.js';
+import { DiscordAPIError, MessageFlags, type Channel, type CommandInteraction, type EmbedBuilder } from 'discord.js';
 import type { Logger } from './logger.js';
 
 /** Discord returns these once an interaction token or message no longer exists. */
@@ -34,13 +34,18 @@ export async function replyOrFollowUp(
   payload: InteractionReplyPayload,
   log: Logger,
 ): Promise<boolean> {
-  const body = { ...payload, allowedMentions: { parse: [] as never[] } };
+  const isEphemeral = payload.ephemeral === true;
+  const body = {
+    allowedMentions: { parse: [] as never[] },
+    embeds: payload.embeds,
+    ...(payload.content === undefined ? {} : { content: payload.content }),
+  };
 
   try {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(body);
     } else {
-      await interaction.reply(body);
+      await interaction.reply(isEphemeral ? { ...body, flags: MessageFlags.Ephemeral } : body);
     }
     return true;
   } catch (err) {
@@ -52,7 +57,7 @@ export async function replyOrFollowUp(
     try {
       // Follow-ups can still succeed when the interaction was merely
       // mis-sequenced; if the token is truly gone this throws too.
-      await interaction.followUp({ ...body, ephemeral: false });
+      await interaction.followUp(body);
       return true;
     } catch (followUpErr) {
       log.warn(

@@ -25,14 +25,13 @@ GROQ_API_KEY=
 MISTRAL_API_KEY=
 NVIDIA_NIM_API_KEY=
 CEREBRAS_API_KEY=
-GROQ_AUTOMOD_API_KEY=
 BRAVE_SEARCH_API_KEY=
 SERPAPI_KEY=
 ```
 
-Optional model overrides: `CYRENE_MODEL`, `ASSISTANT_MODEL`, `SECURITY_SLM_MODEL`, `SECURITY_SLM_FALLBACK_MODEL`. Environment variables take precedence for provider settings. Restart the affected bot after changing the credential file; it is not watched automatically. Never put provider keys in dashboard form fields.
+Optional model settings are `CYRENE_MODEL`, `ASSISTANT_MODEL`, `AGNES_IMAGE_MODEL`, `CYRENE_TTS_MODEL`, `CYRENE_TTS_VOICE`, `ZORO_SLM_MODEL`, `ZORO_SLM_MAX_TOKENS`, and `ZORO_SLM_CONTEXT_CHARS`. Zoro's application caps are 2,000 input characters, 64 output tokens, a 6-second request timeout, and bounded queue concurrency; these are stricter than Cerebras Free Trial limits (1 RPM, 30K uncached TPM, 90K total TPM, 1M TPH, and 1M TPD). Zoro and Shanks share one Cerebras quota, so classifier traffic competes with AutoMod review traffic. Environment variables take precedence for provider settings. Restart the affected bot after changing the credential file; it is not watched automatically. Never put provider keys in dashboard form fields.
 
-Shanks reviews **Discord AutoMod triggers**, not every chat message. Configure a Discord keyword rule with `/automod`, ensure the bot has the required server permissions, and enable Message Content in the Discord developer portal. The runtime requests the AutoModerationExecution intent. Warnings are deduplicated for one minute. Zoro's independent message classifier requires `GROQ_AUTOMOD_API_KEY`.
+Shanks reviews **Discord AutoMod triggers**, not every chat message. Configure a Discord keyword rule with `/automod`, ensure the bot has the required server permissions, and enable Message Content in the Discord developer portal. The runtime requests the AutoModerationExecution intent. Warnings are deduplicated for one minute. Zoro's independent message classifier uses the shared `CEREBRAS_API_KEY` and the bounded Zoro settings above.
 
 ## Discord OAuth
 

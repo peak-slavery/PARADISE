@@ -34,6 +34,22 @@ const csvIds = z.preprocess(
   (v) => (typeof v === 'string' ? v.split(',').map((s) => s.trim()).filter(Boolean) : []),
   z.array(z.string().regex(/^\d{5,25}$/, 'must be a Discord snowflake')),
 );
+const optionalDiscordId = z.preprocess(
+  emptyToUndefined,
+  z.string().regex(/^\d{17,20}$/, 'must be a Discord snowflake').optional(),
+);
+
+const DeployEnvSchema = z.object({
+  BOT_ID: z.string().min(1),
+  DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN is required'),
+  DISCORD_CLIENT_ID: z.string().min(1, 'DISCORD_CLIENT_ID is required'),
+});
+
+export interface DeployEnv {
+  botId: string;
+  discordToken: string;
+  discordClientId: string;
+}
 
 const EnvSchema = z.object({
   BOT_ID: z.string().min(1),
@@ -48,6 +64,7 @@ const EnvSchema = z.object({
   DISCORD_CLIENT_ID: z.string().min(1, 'DISCORD_CLIENT_ID is required'),
 
   OWNER_IDS: csvIds,
+  MASTER_DISCORD_ID: optionalDiscordId,
   HMAC_SECRET: z.preprocess(
     emptyToUndefined,
     z.string().min(32, 'HMAC_SECRET must be at least 32 characters').optional(),
@@ -79,13 +96,11 @@ const EnvSchema = z.object({
   GROQ_API_KEY: optString,
   GEMINI_API_KEY: optString,
   OPENROUTER_API_KEY: optString,
+  AGNES_IMAGE_API_KEY: optString,
 
   // --- Model routing (Ei Flow) -------------------------------------------
   /** Mistral API key — powers the general AI assistant. */
   MISTRAL_API_KEY: optString,
-  /** Dedicated Groq key for the AutoMod SLM, isolated from the chat quota. */
-  GROQ_AUTOMOD_API_KEY: optString,
-
   /** NVIDIA NIM key — Shanks bad-words classifier primary. */
   NVIDIA_NIM_API_KEY: optString,
   /** Cerebras key — Shanks bad-words classifier fallback. */
@@ -97,10 +112,19 @@ const EnvSchema = z.object({
   CYRENE_MODEL: z.string().default('openai/gpt-oss-20b'),
   /** Mistral, served by mistral.ai — the general assistant. */
   ASSISTANT_MODEL: z.string().default('ministral-8b-latest'),
-  /** Small fast model used by Zoro for content classification. */
-  AUTOMOD_SLM_MODEL: z.string().default('llama-3.1-8b-instant'),
+  /** Agnes image-generation model used by Cyrene. */
+  AGNES_IMAGE_MODEL: z.string().default('agnes-image-2.5-flash'),
+  /** Optional OpenRouter TTS model and voice used by Cyrene. */
+  CYRENE_TTS_MODEL: optString,
+  CYRENE_TTS_VOICE: optString,
   /** 0..1 confidence the SLM must report before AutoMod acts. */
   AUTOMOD_SLM_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
+  /** Cerebras model used by Zoro for content classification. */
+  ZORO_SLM_MODEL: z.string().default('qwen-3.8-27b'),
+  /** Maximum output tokens allowed for Zoro's classifier. */
+  ZORO_SLM_MAX_TOKENS: z.coerce.number().int().min(1).max(64).default(64),
+  /** Maximum input characters sent to Zoro's classifier. */
+  ZORO_SLM_CONTEXT_CHARS: z.coerce.number().int().min(1).max(2000).default(2000),
   /** NVIDIA NIM content-safety model — Shanks primary classifier. */
   SECURITY_SLM_MODEL: z.string().default('nvidia/nemotron-3.5-content-safety'),
   /** Cerebras fallback model for the same classifier. */
@@ -110,6 +134,22 @@ const EnvSchema = z.object({
 });
 
 export type RawEnv = z.input<typeof EnvSchema>;
+
+export function loadDeployEnv(overrides: Partial<z.input<typeof DeployEnvSchema>> = {}): DeployEnv {
+  const parsed = DeployEnvSchema.safeParse({ ...process.env, ...overrides });
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('\n');
+    throw new Error(`Invalid deploy environment configuration:\n${issues}`);
+  }
+
+  return {
+    botId: parsed.data.BOT_ID,
+    discordToken: parsed.data.DISCORD_TOKEN,
+    discordClientId: parsed.data.DISCORD_CLIENT_ID,
+  };
+}
 
 export interface Env {
   botId: string;
@@ -122,6 +162,7 @@ export interface Env {
   discordClientId: string;
 
   ownerIds: string[];
+  masterDiscordId: string | undefined;
   hmacSecret: string;
   devGuildId: string | undefined;
   mainGuildId: string | undefined;
@@ -149,15 +190,20 @@ export interface Env {
   groqApiKey: string | undefined;
   geminiApiKey: string | undefined;
   openrouterApiKey: string | undefined;
+  agnesImageApiKey: string | undefined;
 
   mistralApiKey: string | undefined;
-  groqAutomodApiKey: string | undefined;
   nvidiaNimApiKey: string | undefined;
   cerebrasApiKey: string | undefined;
   modelScopeApiKey: string | undefined;
   cyreneModel: string;
   assistantModel: string;
-  automodSlmModel: string;
+  agnesImageModel: string;
+  cyreneTtsModel: string | undefined;
+  cyreneTtsVoice: string | undefined;
+  zoroSlmModel: string;
+  zoroSlmMaxTokens: number;
+  zoroSlmContextChars: number;
   automodSlmThreshold: number;
   securitySlmModel: string;
   securitySlmFallbackModel: string;
@@ -173,12 +219,16 @@ export interface Env {
   hasRedis: boolean;
   /** True when the Mistral API key is present. */
   hasMistral: boolean;
-  /** True when the dedicated AutoMod Groq key is present. */
-  hasAutomodSlm: boolean;
   /** True when the NVIDIA NIM or Cerebras security-classifier key is present. */
   hasSecuritySlm: boolean;
   /** True when the ModelScope search-summarizer key is present. */
   hasSearchSlm: boolean;
+  /** True when the Cerebras API key is present. */
+  hasCerebras: boolean;
+  /** True when the Agnes image API key is present. */
+  hasAgnesImage: boolean;
+  /** True when the TTS API key is present. */
+  hasTts: boolean;
 }
 
 let cached: Env | undefined;
@@ -202,7 +252,7 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
   const upstashUrl = d.UPSTASH_REDIS_REST_URL;
   const upstashToken = d.UPSTASH_REDIS_REST_TOKEN;
 
-  cached = {
+  const env: Env = {
     botId: d.BOT_ID,
     botName: d.BOT_NAME,
     botVersion: d.BOT_VERSION,
@@ -210,6 +260,7 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     discordToken: d.DISCORD_TOKEN,
     discordClientId: d.DISCORD_CLIENT_ID,
     ownerIds: d.OWNER_IDS,
+    masterDiscordId: d.MASTER_DISCORD_ID,
     hmacSecret: d.HMAC_SECRET,
     devGuildId: d.DEV_GUILD_ID,
     mainGuildId: d.MAIN_GUILD_ID,
@@ -231,14 +282,19 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     groqApiKey: d.GROQ_API_KEY,
     geminiApiKey: d.GEMINI_API_KEY,
     openrouterApiKey: d.OPENROUTER_API_KEY,
+    agnesImageApiKey: d.AGNES_IMAGE_API_KEY,
     mistralApiKey: d.MISTRAL_API_KEY,
-    groqAutomodApiKey: d.GROQ_AUTOMOD_API_KEY,
     nvidiaNimApiKey: d.NVIDIA_NIM_API_KEY,
     cerebrasApiKey: d.CEREBRAS_API_KEY,
     modelScopeApiKey: d.MODELSCOPE_API_KEY,
     cyreneModel: d.CYRENE_MODEL,
     assistantModel: d.ASSISTANT_MODEL,
-    automodSlmModel: d.AUTOMOD_SLM_MODEL,
+    agnesImageModel: d.AGNES_IMAGE_MODEL,
+    cyreneTtsModel: d.CYRENE_TTS_MODEL,
+    cyreneTtsVoice: d.CYRENE_TTS_VOICE,
+    zoroSlmModel: d.ZORO_SLM_MODEL,
+    zoroSlmMaxTokens: d.ZORO_SLM_MAX_TOKENS,
+    zoroSlmContextChars: d.ZORO_SLM_CONTEXT_CHARS,
     automodSlmThreshold: d.AUTOMOD_SLM_THRESHOLD,
     securitySlmModel: d.SECURITY_SLM_MODEL,
     securitySlmFallbackModel: d.SECURITY_SLM_FALLBACK_MODEL,
@@ -248,12 +304,14 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     hasSecondaryMongo: Boolean(mongodbSecondaryUri),
     hasRedis: Boolean(upstashUrl && upstashToken),
     hasMistral: Boolean(d.MISTRAL_API_KEY),
-    hasAutomodSlm: Boolean(d.GROQ_AUTOMOD_API_KEY),
     hasSecuritySlm: Boolean(d.NVIDIA_NIM_API_KEY || d.CEREBRAS_API_KEY),
     hasSearchSlm: Boolean(d.MODELSCOPE_API_KEY),
+    hasCerebras: Boolean(d.CEREBRAS_API_KEY),
+    hasAgnesImage: Boolean(d.AGNES_IMAGE_API_KEY),
+    hasTts: Boolean(d.OPENROUTER_API_KEY && d.CYRENE_TTS_MODEL && d.CYRENE_TTS_VOICE),
   };
-
-  return cached;
+  cached = env;
+  return env;
 }
 
 /** Test seam: drop the memoised env so a fresh load picks up new process.env. */

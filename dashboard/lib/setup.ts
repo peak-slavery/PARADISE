@@ -46,7 +46,13 @@ export function getSetupReadiness(): SetupReadiness {
   const redis = present(process.env.UPSTASH_REDIS_REST_URL) && present(process.env.UPSTASH_REDIS_REST_TOKEN);
   const mistral = present(process.env.MISTRAL_API_KEY);
   const groqCyrene = present(process.env.GROQ_API_KEY);
-  const groqAutomod = present(process.env.GROQ_AUTOMOD_API_KEY);
+  const cerebrasZoro = present(process.env.CEREBRAS_API_KEY);
+  const agnesImageCredential = present(process.env.AGNES_IMAGE_API_KEY);
+  const agnesImage = false;
+  const tts =
+    present(process.env.OPENROUTER_API_KEY) &&
+    present(process.env.CYRENE_TTS_MODEL) &&
+    present(process.env.CYRENE_TTS_VOICE);
 
   const items: ReadinessItem[] = [
     {
@@ -90,13 +96,33 @@ export function getSetupReadiness(): SetupReadiness {
       group: 'ai',
     },
     {
-      key: 'groqAutomod',
-      label: 'Groq — AutoMod SLM',
-      ready: groqAutomod,
-      detail: groqAutomod
-        ? `Connected — ${process.env.AUTOMOD_SLM_MODEL ?? 'llama-3.1-8b-instant'} (isolated from chat quota)`
-        : 'Set GROQ_AUTOMOD_API_KEY — dedicated key so SLM traffic never touches the chat quota',
-      envVar: 'GROQ_AUTOMOD_API_KEY',
+      key: 'cerebrasZoro',
+      label: 'Cerebras — Zoro classifier',
+      ready: cerebrasZoro,
+      detail: cerebrasZoro
+        ? `Configured — ${process.env.ZORO_SLM_MODEL ?? 'qwen-3.8-27b'}`
+        : 'Set CEREBRAS_API_KEY — shared by Zoro and Shanks',
+      envVar: 'CEREBRAS_API_KEY',
+      group: 'ai',
+    },
+    {
+      key: 'agnesImage',
+      label: 'Agnes — image generation',
+      ready: agnesImage,
+      detail: agnesImageCredential
+        ? 'Credential present — Agnes endpoint contract is still required'
+        : 'Set AGNES_IMAGE_API_KEY; Agnes endpoint contract is still required',
+      envVar: 'AGNES_IMAGE_API_KEY',
+      group: 'ai',
+    },
+    {
+      key: 'tts',
+      label: 'OpenRouter — Cyrene TTS',
+      ready: tts,
+      detail: tts
+        ? `Configured — ${process.env.CYRENE_TTS_MODEL}`
+        : 'Set OPENROUTER_API_KEY, CYRENE_TTS_MODEL and CYRENE_TTS_VOICE',
+      envVar: 'OPENROUTER_API_KEY + CYRENE_TTS_*',
       group: 'ai',
     },
     {
@@ -125,11 +151,18 @@ export function getSetupReadiness(): SetupReadiness {
       ready: mistral,
     },
     {
-      route: 'AutoMod SLM',
-      model: process.env.AUTOMOD_SLM_MODEL ?? 'llama-3.1-8b-instant',
-      via: 'Groq',
-      envVar: 'GROQ_AUTOMOD_API_KEY',
-      ready: groqAutomod,
+      route: '/imagine',
+      model: process.env.AGNES_IMAGE_MODEL ?? 'agnes-image-2.5-flash',
+      via: 'Agnes',
+      envVar: 'AGNES_IMAGE_API_KEY',
+      ready: agnesImage,
+    },
+    {
+      route: '/speak',
+      model: process.env.CYRENE_TTS_MODEL ?? 'not configured',
+      via: 'OpenRouter TTS',
+      envVar: 'OPENROUTER_API_KEY + CYRENE_TTS_*',
+      ready: tts,
     },
   ];
 

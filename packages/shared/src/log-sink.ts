@@ -21,6 +21,10 @@ export interface BatchWriterOptions<T extends Document> {
    * trip.
    */
   write?: (collection: Collection<T>, batch: T[]) => Promise<void>;
+  /** Maximum number of documents retained during a prolonged outage. */
+  maxBuffered?: number;
+  /** Called when documents are discarded because the retention cap is full. */
+  onDrop?: (dropped: number) => void;
   onError?: (err: unknown, dropped: number) => void;
 }
 
@@ -28,7 +32,7 @@ export interface BatchWriter<T extends Document> {
   push(doc: T): void;
   flush(): Promise<void>;
   stop(): Promise<void>;
-  stats(): { buffered: number; flushed: number; failed: number };
+  stats(): { buffered: number; dropped: number; flushed: number; failed: number };
 }
 
 /**
@@ -41,6 +45,7 @@ export interface BatchWriter<T extends Document> {
 export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T>): BatchWriter<T> {
   const intervalMs = opts.intervalMs ?? 30_000;
   const maxBatch = opts.maxBatch ?? 200;
+  const maxBuffered = Math.max(maxBatch, opts.maxBuffered ?? 5_000);
 
   let buffer: T[] = [];
   let timer: NodeJS.Timeout | null = null;
@@ -48,6 +53,16 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
   let stopping = false;
   let flushed = 0;
   let failed = 0;
+  let droppedTotal = 0;
+
+  const retain = (docs: T[]): void => {
+    const dropped = Math.max(0, docs.length - maxBuffered);
+    buffer = dropped === 0 ? docs : docs.slice(dropped);
+    if (dropped > 0) {
+      droppedTotal += dropped;
+      opts.onDrop?.(dropped);
+    }
+  };
 
   const flush = async (): Promise<void> => {
     if (flushing) return flushing;
@@ -66,7 +81,7 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
         }
         flushed += batch.length;
       } catch (err) {
-        buffer = [...batch, ...buffer];
+        retain([...batch, ...buffer]);
         failed += batch.length;
         opts.onError?.(err, batch.length);
       } finally {
@@ -84,7 +99,7 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
   return {
     push(doc) {
       if (stopping) return;
-      buffer.push(doc);
+      retain([...buffer, doc]);
       if (buffer.length >= maxBatch) void flush();
     },
     flush,
@@ -95,6 +110,6 @@ export function createBatchWriter<T extends Document>(opts: BatchWriterOptions<T
       await flush();
       if (buffer.length > 0) await flush();
     },
-    stats: () => ({ buffered: buffer.length, flushed, failed }),
+    stats: () => ({ buffered: buffer.length, dropped: droppedTotal, flushed, failed }),
   };
 }

@@ -44,7 +44,6 @@ export interface HealthPayload {
 }
 
 const HEALTH_CACHE_MS = 10_000;
-let cachedHealth: { payload: HealthPayload; expiresAt: number } | null = null;
 
 function hasDiagnosticsAccess(req: IncomingMessage): boolean {
   const token = process.env.HEALTH_TOKEN?.trim();
@@ -107,6 +106,7 @@ export async function buildHealthPayload(deps: HealthDeps): Promise<HealthPayloa
  */
 export function startHealthServer(options: HealthBindOptions): Promise<HealthServer> {
   let runtimeDeps: HealthDeps | null = null;
+  let cachedHealth: { payload: HealthPayload; expiresAt: number } | null = null;
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const send = (code: number, body: string): void => {
       res.writeHead(code, {
@@ -130,7 +130,7 @@ export function startHealthServer(options: HealthBindOptions): Promise<HealthSer
 
     const detailed = hasDiagnosticsAccess(req);
     if (!runtimeDeps) {
-      send(200, JSON.stringify({ status: 'starting', bot_id: options.botId, version: options.version }));
+      send(200, JSON.stringify({ status: 'starting' }));
       return;
     }
 

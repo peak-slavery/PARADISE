@@ -7,7 +7,7 @@ import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized, attachServerLock } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
 import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
-import { buildClientOptions, handleDashboardEmbed, parseGuildAuthorizationButton, redactAuditMeta } from './bot.js';
+import { buildClientOptions, buildDashboardEmbed, handleDashboardEmbed, parseGuildAuthorizationButton, redactAuditMeta } from './bot.js';
 
 const schema = await import('node:fs').then(({ readFileSync }) =>
   readFileSync(new URL('../../../infra/supabase/schema.sql', import.meta.url), 'utf8'),
@@ -23,10 +23,10 @@ describe('security schema and audit boundaries', () => {
   it('redacts credential-shaped audit metadata before storage', () => {
     expect(redactAuditMeta({
       token: 'secret-token',
-      nested: { url: 'https://example.invalid/token', safe: 'ok' },
+      nested: { dashboard: 'https://example.invalid/token', discord: 'MTA5NzgxNDUyOTg3MTA5Mzc3OA.Gxxxxx.rest' },
     })).toEqual({
       token: '[redacted]',
-      nested: { url: '[redacted]', safe: 'ok' },
+      nested: { dashboard: 'https://example.invalid/token', discord: '[redacted]' },
     });
   });
 });
@@ -274,6 +274,11 @@ describe('guild authorization', () => {
 });
 
 describe('bot interlink', () => {
+  it('rejects a dashboard embed with no visible content', () => {
+    expect(buildDashboardEmbed({ channelId: '123456789012345678' })).toBeNull();
+    expect(buildDashboardEmbed({ channelId: '123456789012345678', title: 'Visible' })).not.toBeNull();
+  });
+
   it('rejects envelopes larger than the shared transport cap', async () => {
     const kv = {
       publish: async () => 1,

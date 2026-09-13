@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { XpTracker } from './xp.js';
+import { totalXpForLevel } from './levels.js';
+import { chatContentLength, XpTracker } from './xp.js';
 
 type Doc = { guild_id: string; user_id: string; xp: number; level: number; messages: number; voice_seconds: number; updated_at: Date };
 
@@ -39,6 +40,13 @@ function fakeCollection(store: Map<string, Doc>) {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('chat content scoring', () => {
+  it('treats partial messages with null content as empty', () => {
+    expect(chatContentLength(null)).toBe(0);
+    expect(chatContentLength('hello')).toBe(5);
+  });
+});
 
 describe('XpTracker stop()', () => {
   it('drains the full buffer across maxBatch-sized chunks', async () => {
@@ -118,5 +126,23 @@ describe('XpTracker stop()', () => {
     await tracker.stop();
 
     expect(tracker.pending).toBe(1);
+  });
+
+  it('emits one level-up event for every crossed level', async () => {
+    const store = new Map<string, Doc>([
+      ['100:200', { guild_id: '100', user_id: '200', xp: 0, level: 0, messages: 0, voice_seconds: 0, updated_at: new Date() }],
+    ]);
+    const collection = fakeCollection(store);
+    const events: Array<{ level: number }> = [];
+    const tracker = new XpTracker({
+      getCollection: () => collection,
+      log: { child: () => ({ info: () => {}, warn: () => {}, error: () => {} }), info: () => {}, warn: () => {}, error: () => {} } as never,
+      onLevelUp: (event) => events.push({ level: event.level }),
+    });
+
+    tracker.add('100', '200', { xp: totalXpForLevel(3), messages: 1 });
+    await tracker.flush();
+
+    expect(events.map((event) => event.level)).toEqual([1, 2, 3]);
   });
 });

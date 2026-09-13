@@ -29,38 +29,7 @@ x-bot-common: &bot-common
   rootDir: .
   healthCheckPath: /health
   autoDeployTrigger: checksPass
-  buildCommand: npm ci --include=dev && npm run deploy:commands -w @eiflow/bot-$BOT_ID
-  envVars:
-    - key: NODE_OPTIONS
-      value: --max-old-space-size=384
-    - key: BOT_VERSION
-      value: '1.0.0'
-    - key: OWNER_IDS
-      value: '1479589523426902208'
-    - key: MONGODB_DB
-      value: eiflow
-    - key: MONGODB_SECONDARY_DB
-      value: eipointsecurity
-    - key: LOG_LEVEL
-      value: info
-    - key: REDIS_DAILY_COMMAND_BUDGET
-      value: '8000'
-    - key: DISCORD_TOKEN
-      sync: false
-    - key: HMAC_SECRET
-      sync: false
-    - key: DASHBOARD_URL
-      sync: false
-    - key: DEV_GUILD_ID
-      sync: false
-    - key: MAIN_GUILD_ID
-      sync: false
-    - key: DEV_AUTH_CHANNEL_ID
-      sync: false
-    - key: HEALTH_TOKEN
-      generateValue: true
-    - key: SENTRY_DSN
-      sync: false
+  buildCommand: npm ci --include=dev
 
 # --- Services ----------------------------------------------------------------
 
@@ -68,7 +37,38 @@ services:
   - name: eiflow-niko-robin
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-niko-robin
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: niko-robin
       - key: BOT_NAME
@@ -89,7 +89,38 @@ services:
   - name: eiflow-boahancock
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-boahancock
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: boahancock
       - key: BOT_NAME
@@ -102,7 +133,38 @@ services:
   - name: eiflow-nami
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-nami
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: nami
       - key: BOT_NAME
@@ -115,7 +177,38 @@ services:
   - name: eiflow-cyrene
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-cyrene
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: cyrene
       - key: BOT_NAME
@@ -128,11 +221,19 @@ services:
         value: openai/gpt-oss-20b
       - key: ASSISTANT_MODEL
         value: ministral-8b-latest
+      - key: AGNES_IMAGE_MODEL
+        value: agnes-image-2.5-flash
+      - key: CYRENE_TTS_MODEL
+        value: openai/tts-1
+      - key: CYRENE_TTS_VOICE
+        value: alloy
       - key: MISTRAL_API_KEY
         sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: AGNES_IMAGE_API_KEY
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
@@ -140,7 +241,38 @@ services:
   - name: eiflow-zoro
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-zoro
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: zoro
       - key: BOT_NAME
@@ -149,17 +281,52 @@ services:
         value: '#2ECC71'
       - key: DISCORD_CLIENT_ID
         value: '1544547167858069504'
-      - key: AUTOMOD_SLM_MODEL
-        value: llama-3.1-8b-instant
+      - key: ZORO_SLM_MODEL
+        value: qwen-3.8-27b
+      - key: ZORO_SLM_MAX_TOKENS
+        value: '64'
+      - key: ZORO_SLM_CONTEXT_CHARS
+        value: '2000'
       - key: AUTOMOD_SLM_THRESHOLD
         value: '0.75'
-      - key: GROQ_AUTOMOD_API_KEY
+      - key: CEREBRAS_API_KEY
         sync: false
 
   - name: eiflow-shanks
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-shanks
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: shanks
       - key: BOT_NAME
@@ -180,7 +347,38 @@ services:
   - name: eiflow-luffy
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-luffy
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: luffy
       - key: BOT_NAME
@@ -193,7 +391,38 @@ services:
   - name: eiflow-sanji
     <<: *bot-common
     startCommand: npm run start -w @eiflow/bot-sanji
+    # Render replaces envVars arrays during YAML merges; keep common entries local.
     envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: BOT_VERSION
+        value: '1.0.0'
+      - key: OWNER_IDS
+        value: '1479589523426902208'
+      - key: MONGODB_DB
+        value: eiflow
+      - key: MONGODB_SECONDARY_DB
+        value: eipointsecurity
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_DAILY_COMMAND_BUDGET
+        value: '8000'
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: DEV_GUILD_ID
+        sync: false
+      - key: MAIN_GUILD_ID
+        sync: false
+      - key: DEV_AUTH_CHANNEL_ID
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
+      - key: SENTRY_DSN
+        sync: false
       - key: BOT_ID
         value: sanji
       - key: BOT_NAME
