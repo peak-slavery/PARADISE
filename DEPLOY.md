@@ -141,7 +141,7 @@ up on the next 5-minute cache expiry.
    - `HMAC_SECRET` (the same value stored in the dashboard's
      `HMAC_SECRETS_JSON` for that bot)
    - `DASHBOARD_URL` (your Vercel deployment URL, e.g.
-     `https://paradise-engine.vercel.app`)
+     `https://ei-point-dashboard.vercel.app`)
    - `DEV_GUILD_ID` / `MAIN_GUILD_ID` / `DEV_AUTH_CHANNEL_ID` (Discord
      snowflake ids for the development guild, main guild, and the private
      review channel)
