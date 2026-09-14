@@ -62,6 +62,11 @@ function buildEnv(botId) {
     DISCORD_CLIENT_ID: clientId,
     BOT_ID: botId,
     BOT_NAME: HEADERS[botId],
+    // Guild IDs are REQUIRED for global deploys: registerCommands() clears
+    // dev/main guild scopes so commands never exist in two scopes at once
+    // (the source of the "double slash commands" reports).
+    DEV_GUILD_ID: field(raw, 'DEV_GUILD_ID') ?? raw.match(/^#dev server=(\d+)/m)?.[1] ?? '',
+    MAIN_GUILD_ID: field(raw, 'MAIN_GUILD_ID') ?? raw.match(/^#main server=(\d+)/m)?.[1] ?? '',
     MONGODB_DB: 'eiflow',
     LOG_LEVEL: 'error',
     ...(botId === 'cyrene' && {

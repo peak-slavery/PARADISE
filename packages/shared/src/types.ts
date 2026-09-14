@@ -78,6 +78,13 @@ export interface CommandContext {
 export interface CommandModule {
   data: { name: string; toJSON(): unknown };
   execute(ctx: CommandContext): Promise<void>;
+  /**
+   * Access scope. `public` (default) commands register globally and work in
+   * every authorized server. `dev` commands — authentication, authorization
+   * and other operator-critical controls — register ONLY in DEV_GUILD_ID and
+   * are rejected at runtime everywhere else.
+   */
+  access?: 'public' | 'dev';
 }
 
 export interface EventContext {

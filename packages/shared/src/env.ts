@@ -43,12 +43,18 @@ const DeployEnvSchema = z.object({
   BOT_ID: z.string().min(1),
   DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN is required'),
   DISCORD_CLIENT_ID: z.string().min(1, 'DISCORD_CLIENT_ID is required'),
+  // Optional: a global registration also clears the guild-scoped copies for
+  // these servers so commands never appear twice (global + guild at once).
+  DEV_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
+  MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
 });
 
 export interface DeployEnv {
   botId: string;
   discordToken: string;
   discordClientId: string;
+  devGuildId?: string;
+  mainGuildId?: string;
 }
 
 const EnvSchema = z.object({
@@ -83,6 +89,11 @@ const EnvSchema = z.object({
 
   UPSTASH_REDIS_REST_URL: optionalHttpsUrl,
   UPSTASH_REDIS_REST_TOKEN: optString,
+
+  /** Peer bot origin the keep-alive ring pings (Render free-tier anti-sleep). */
+  KEEPALIVE_PING_URL: optionalHttpsUrl,
+  /** Ping cadence in seconds; clamped 60..900, default 300 (< 15 min spin-down). */
+  KEEPALIVE_PING_INTERVAL_SEC: z.coerce.number().int().min(60).max(900).optional(),
 
   SENTRY_DSN: optString,
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -148,6 +159,8 @@ export function loadDeployEnv(overrides: Partial<z.input<typeof DeployEnvSchema>
     botId: parsed.data.BOT_ID,
     discordToken: parsed.data.DISCORD_TOKEN,
     discordClientId: parsed.data.DISCORD_CLIENT_ID,
+    devGuildId: parsed.data.DEV_GUILD_ID,
+    mainGuildId: parsed.data.MAIN_GUILD_ID,
   };
 }
 
@@ -178,6 +191,10 @@ export interface Env {
 
   upstashUrl: string | undefined;
   upstashToken: string | undefined;
+
+  /** Peer bot origin the keep-alive ring pings; unset disables the ping. */
+  keepalivePingUrl: string | undefined;
+  keepalivePingIntervalSec: number | undefined;
 
   sentryDsn: string | undefined;
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
@@ -273,6 +290,8 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     mongodbSecondaryDb: d.MONGODB_SECONDARY_DB,
     upstashUrl,
     upstashToken,
+    keepalivePingUrl: d.KEEPALIVE_PING_URL,
+    keepalivePingIntervalSec: d.KEEPALIVE_PING_INTERVAL_SEC,
     sentryDsn: d.SENTRY_DSN,
     logLevel: d.LOG_LEVEL,
     port: d.PORT,

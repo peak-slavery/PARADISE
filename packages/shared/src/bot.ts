@@ -7,6 +7,7 @@ import {
   EmbedBuilder,
   Events,
   MessageFlags,
+  PermissionsBitField,
   type APIEmbedField,
   type ChatInputCommandInteraction,
   type ClientOptions,
@@ -31,6 +32,7 @@ import { createBatchWriter, type LogSink } from './log-sink.js';
 import { createEmbedFactory, type EmbedFactory } from './embed.js';
 import { QueueTimeoutError, ServiceBusyError, TaskQueue, type QueueOptions } from './queue.js';
 import { LazyCommandRunner, UNIVERSAL_COMMANDS_DIR } from './commands.js';
+import { startKeepalivePing } from './keepalive.js';
 import { attachServerLock, isGuildAuthorized } from './server-lock.js';
 import { startHealthServer, type HealthDeps, type HealthServer } from './health.js';
 import { DEFAULT_POLICY, enforceRateLimit, type RateLimitPolicy } from './rate-limit.js';
@@ -694,6 +696,43 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
           finishOperation('paused');
           return;
         }
+
+        // Dev-only commands (authorization and other operator controls) are
+        // guild-scoped to DEV_GUILD_ID at registration; this runtime check is
+        // the second layer in case a stale scope lingers anywhere.
+        if ((await runner.accessFor(name)) === 'dev' && guildId !== env.devGuildId) {
+          await ctx.error('Dev server only', 'This command is restricted to the operator development server.');
+          finishOperation('dev_only');
+          return;
+        }
+
+        // Dashboard-configurable RBAC: per-guild, per-command Discord role
+        // allowlists stored in bot_states.feature_flags.command_roles.
+        // Owners, administrators, and operators always pass.
+        const commandRoles = (state.featureFlags as { command_roles?: unknown }).command_roles;
+        if (guildId !== 'dm' && commandRoles && typeof commandRoles === 'object' && !Array.isArray(commandRoles)) {
+          const allowed = (commandRoles as Record<string, unknown>)[name];
+          if (Array.isArray(allowed) && allowed.length > 0 && typeof allowed[0] === 'string') {
+            const bypass =
+              services.isOwner(interaction.user.id) ||
+              interaction.user.id === interaction.guild?.ownerId ||
+              new PermissionsBitField(
+                (interaction.member as GuildMember | null)?.permissions ?? 0n,
+              ).has(PermissionsBitField.Flags.Administrator);
+            if (!bypass) {
+              const memberRoles = interaction.inGuild() ? interaction.member?.roles : null;
+              const hasRole =
+                memberRoles && 'cache' in memberRoles
+                  ? (allowed as string[]).some((roleId) => memberRoles.cache.has(roleId))
+                  : false;
+              if (!hasRole) {
+                await ctx.error('Restricted command', 'Your roles do not allow this command in this server.');
+                finishOperation('forbidden');
+                return;
+              }
+            }
+          }
+        }
       }
 
       const policy = unlimited.has(name)
@@ -751,6 +790,7 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = setInterval(refreshHeartbeat, 60_000);
     heartbeatTimer.unref?.();
+    startKeepalivePing(env, log);
     log.info(
       { guilds: ready.guilds.cache.size, user: ready.user.tag, commands: options.commandsDir },
       'bot ready',

@@ -1,6 +1,10 @@
 import { SlashCommandBuilder } from 'discord.js';
 
 import type { CommandModule } from '../types.js';
+
+// Operator-critical: guild authorization/verification controls register ONLY
+// in the dev server and are rejected everywhere else at runtime.
+export const access = 'dev' as const;
 import { removeGuildWhitelist, writeGuildWhitelist } from '../whitelist.js';
 
 export const data = new SlashCommandBuilder()

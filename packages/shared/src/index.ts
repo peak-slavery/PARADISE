@@ -29,6 +29,7 @@ export * from './control.js';
 export * from './queue.js';
 export * from './responses.js';
 export * from './health.js';
+export * from './keepalive.js';
 export * from './hmac.js';
 export * from './types.js';
 export * from './authorization.js';

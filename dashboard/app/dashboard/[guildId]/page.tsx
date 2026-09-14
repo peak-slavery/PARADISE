@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 
+import { AccessControl } from '@/components/dashboard/AccessControl';
 import { BotTabs } from '@/components/dashboard/BotTabs';
 import { ConfigForm } from '@/components/dashboard/ConfigForm';
 import { ControlCenter } from '@/components/dashboard/ControlCenter';
@@ -40,6 +41,7 @@ export default async function GuildConfigPage({
         updatedAt={updatedAt}
         demo={demo}
       />
+      <div className="mt-8"><AccessControl key={guildId + ' :' + bot.id} guildId={guildId} bot={bot} demo={demo} /></div>
       <div className="mt-8"><ControlCenter key={guildId} guildId={guildId} /></div>
     </div>
   );
