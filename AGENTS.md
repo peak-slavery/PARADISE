@@ -1,5 +1,11 @@
 # Paradise Engine Operator Notes
 
+## Session Memory
+
+Read `SESSION_HANDOFF.md` first: it records deployment state (Vercel/GitHub CI),
+root causes fixed, and open items. Keep it current when deployment topology or
+open items change; it must never contain secrets.
+
 ## PM2 Services
 
 | Port | Name | Type |
