@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { CommandModule } from './types.js';
+
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
-const envState = vi.hoisted(() => ({
-  env: {
-    botId: 'shanks',
-    discordToken: 'test-token',
-    discordClientId: '123',
-    devGuildId: undefined as string | undefined,
-    mainGuildId: undefined as string | undefined,
-  },
-}));
-const moduleState = vi.hoisted(() => ({ modules: [{ data: { toJSON: () => ({ name: 'help' }) } }] }));
+interface DeployEnvStub {
+  botId: string;
+  discordToken: string;
+  discordClientId: string;
+  devGuildId?: string;
+  mainGuildId?: string;
+}
+const envState = vi.hoisted(() => ({ env: undefined as unknown as DeployEnvStub }));
+const moduleState = vi.hoisted(() => ({ modules: [] as CommandModule[] }));
 
 vi.mock('discord.js', () => ({
   REST: class { setToken() { return this; } get = mocks.get; put = mocks.put; },
@@ -21,18 +22,21 @@ vi.mock('./commands.js', () => ({ loadAllCommandModules: async () => moduleState
 
 import { registerCommands } from './deploy.js';
 
+const devModule = (name: string, access?: 'public' | 'dev'): CommandModule => ({
+  data: { name, toJSON: () => ({ name }) },
+  access,
+  async execute() {}
+});
+
 describe('registration verification', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     envState.env = { botId: 'shanks', discordToken: 'test-token', discordClientId: '123' };
-    moduleState.modules = [{ data: { toJSON: () => ({ name: 'help' }) } }];
+    moduleState.modules = [devModule('help')];
   });
 
   it('guild scope installs only dev-access commands', async () => {
-    moduleState.modules = [
-      { data: { toJSON: () => ({ name: 'help' }) } },
-      { data: { toJSON: () => ({ name: 'authorize' }) }, access: 'dev' },
-    ];
+    moduleState.modules = [devModule('help'), devModule('authorize', 'dev')];
     mocks.get.mockResolvedValueOnce({ id: '123' }).mockResolvedValueOnce([{ name: 'authorize', type: 1 }]);
     expect(await registerCommands(['bot', 'universal'], '456')).toEqual({ botId: 'shanks', count: 1, scope: 'guild' });
     expect(mocks.put).toHaveBeenCalledWith('/guild', { body: [{ name: 'authorize' }] });
@@ -40,10 +44,7 @@ describe('registration verification', () => {
 
   it('global scope installs public commands, dev scope the dev set, and clears main', async () => {
     envState.env = { ...envState.env, devGuildId: '999', mainGuildId: '888' };
-    moduleState.modules = [
-      { data: { toJSON: () => ({ name: 'help' }) } },
-      { data: { toJSON: () => ({ name: 'authorize' }) }, access: 'dev' },
-    ];
+    moduleState.modules = [devModule('help'), devModule('authorize', 'dev')];
     mocks.get
       .mockResolvedValueOnce({ id: '123' })
       .mockResolvedValueOnce([{ name: 'help', type: 1 }])
@@ -56,7 +57,7 @@ describe('registration verification', () => {
   });
 
   it('skips dev commands with a warning when no dev guild is configured', async () => {
-    moduleState.modules = [{ data: { toJSON: () => ({ name: 'authorize' }) }, access: 'dev' }];
+    moduleState.modules = [devModule('authorize', 'dev')];
     mocks.get.mockResolvedValueOnce({ id: '123' }).mockResolvedValueOnce([]);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await registerCommands(['universal']);
