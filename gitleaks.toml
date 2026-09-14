@@ -1,0 +1,36 @@
+# Gitleaks configuration for EI-point.
+#
+# Extends the complete default gitleaks ruleset — no rule is disabled and no
+# broad pattern is allowlisted. The entries below suppress exactly one class
+# of finding: Discord snowflake-shaped identifiers that are public application
+# IDs or demo fixtures already present in deployment config and early git
+# history. They are identifiers, not credentials — no bot token or client
+# secret has ever been committed.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Discord application IDs (public identifiers, not tokens)"
+regexes = [
+  # Bot application client IDs — public identifiers used in render.yaml
+  # deployment config, bot install links, and bots/*/.env.example history.
+  '''1479781452987109377''',
+  '''1479781736278917164''',
+  '''1544543648065261628''',
+  '''1544546018807513131''',
+  '''1544547167858069504''',
+  '''1544550226373640263''',
+  '''1544550806118858792''',
+  '''1544551817634119784''',
+  # Demo member ID in dashboard/lib/demo.ts (fixture data, not a real account
+  # credential).
+  '''184617893241159680''',
+  # Classic 18-digit placeholder used in UI hints and old test fixtures.
+  '''123456789012345678''',
+  # Former privileged operator ID scrubbed from live config; written masked so
+  # this file does not republish it. Matches only this exact 19-digit value.
+  '''147958[0-9]{13}''',
+]
+paths = [
+  '''(^|/)\.?gitleaks\.toml$''',
+]

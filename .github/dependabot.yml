@@ -10,11 +10,6 @@ updates:
         dependency-type: development
       production-dependencies:
         dependency-type: production
-    ignore:
-      # Large framework/runtime upgrades need their own compatibility and
-      # production smoke validation rather than an automatic weekly change.
-      - dependency-name: next
-        update-types: [version-update:ignore]
     commit-message:
       prefix: chore(deps)
     labels: [dependencies]

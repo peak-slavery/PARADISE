@@ -158,24 +158,46 @@ await check('redis rate-limit path', async (pass) => {
 
 await check('hmac tampering and cross-bot rejection', async (pass) => {
   const secrets = JSON.parse(requiredString('HMAC_SECRETS_JSON'));
+  if (!secrets || typeof secrets !== 'object' || Array.isArray(secrets)) {
+    throw new Error('HMAC_SECRETS_JSON must be an object');
+  }
+  const expectedBotIds = [
+    'shanks', 'sanji', 'zoro', 'boahancock',
+    'nami', 'luffy', 'niko-robin', 'cyrene',
+  ];
+  const invalidBotIds = expectedBotIds.filter((id) =>
+    typeof secrets[id] !== 'string' || secrets[id].length < 32,
+  );
+  if (invalidBotIds.length > 0) {
+    throw new Error(`HMAC_SECRETS_JSON has missing or weak secrets for: ${invalidBotIds.join(', ')}`);
+  }
+  const uniqueSecrets = new Set(expectedBotIds.map((id) => secrets[id]));
+  if (uniqueSecrets.size !== expectedBotIds.length) {
+    throw new Error('HMAC_SECRETS_JSON must contain unique secrets for every bot');
+  }
+
   const botId = requiredString('SMOKE_BOT_ID');
+  if (!expectedBotIds.includes(botId)) throw new Error(`unknown SMOKE_BOT_ID: ${botId}`);
   const secret = secrets[botId];
-  if (typeof secret !== 'string' || !secret) throw new Error(`missing HMAC secret for ${botId}`);
-  const otherBotId = Object.keys(secrets).find((id) => id !== botId);
-  if (!otherBotId) throw new Error('HMAC_SECRETS_JSON must contain at least two distinct bot secrets');
-  const send = async (payload, signatureSecret = secret, timestamp = Math.floor(Date.now() / 1000)) => {
-    const body = JSON.stringify(payload);
-    const signature = createHmac('sha256', signatureSecret).update(`${timestamp}.${body}`).digest('hex');
+  const otherBotId = expectedBotIds.find((id) => id !== botId);
+  const send = async (
+    payload,
+    signatureSecret = secret,
+    timestamp = Math.floor(Date.now() / 1000),
+    rawBody = JSON.stringify(payload),
+  ) => {
+    const signedBody = JSON.stringify(payload);
+    const signature = createHmac('sha256', signatureSecret).update(`${timestamp}.${signedBody}`).digest('hex');
     return fetch(new URL('/api/internal/config', dashboardUrl), {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-pe-timestamp': String(timestamp),
-      'x-pe-signature': signature,
-    },
-    body,
-    signal: timeout(),
-  });
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-pe-timestamp': String(timestamp),
+        'x-pe-signature': signature,
+      },
+      body: rawBody,
+      signal: timeout(),
+    });
   };
 
   const basePayload = { bot_id: botId, guild_id: '123456789012345678', request_id: 'smoke-hmac-test' };
@@ -183,13 +205,13 @@ await check('hmac tampering and cross-bot rejection', async (pass) => {
   if (stale.status !== 401) throw new Error(`stale request returned HTTP ${stale.status}`);
 
   const tamperedPayload = { ...basePayload, request_id: 'smoke-hmac-tampered' };
-  const tampered = await send(tamperedPayload, secret);
+  const tampered = await send(basePayload, secret, undefined, JSON.stringify(tamperedPayload));
   if (tampered.status !== 401) throw new Error(`tampered body returned HTTP ${tampered.status}`);
 
   const wrongBot = await send(basePayload, secrets[otherBotId]);
   if (wrongBot.status !== 401) throw new Error(`cross-bot secret returned HTTP ${wrongBot.status}`);
 
-  pass('stale, tampered, and cross-bot requests rejected');
+  pass('complete HMAC map, stale, tampered, and cross-bot requests rejected');
 });
 
 const bots = [

@@ -120,12 +120,15 @@ jobs:
         language: [javascript-typescript]
     steps:
       - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/autobuild@v4
+      - name: Analyze with CodeQL
+        uses: github/codeql-action/analyze@v4
         with:
           category: '/language:${{ matrix.language }}'
+          upload: never
 
   dependency-review:
     name: dependency review
@@ -150,6 +153,11 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # gitleaks.toml is also auto-detected at the repo root; set it
+          # explicitly so the job never silently runs with default rules only.
+          GITLEAKS_CONFIG: gitleaks.toml
+          # Pin the engine to the version the allowlist was validated against.
+          GITLEAKS_VERSION: '8.30.1'
 
   production-smoke:
     name: production smoke

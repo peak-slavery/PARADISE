@@ -45,3 +45,13 @@ temp cred.txt
 *.p12
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+.playwright/
+
+# Local agent-tooling state — mirror the machine-local excludes so the repo
+# stays portable (these must never ride along on a fresh clone).
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scripts/
+.bot-logs/
+.superpowers/
+.zcode/
