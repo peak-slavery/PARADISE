@@ -61,6 +61,8 @@ services:
         sync: false
       - key: DEV_GUILD_ID
         sync: false
+      - key: MASTER_DISCORD_ID
+        sync: false
       - key: MAIN_GUILD_ID
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
@@ -113,6 +115,8 @@ services:
         sync: false
       - key: DEV_GUILD_ID
         sync: false
+      - key: MASTER_DISCORD_ID
+        sync: false
       - key: MAIN_GUILD_ID
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
@@ -157,6 +161,8 @@ services:
         sync: false
       - key: DEV_GUILD_ID
         sync: false
+      - key: MASTER_DISCORD_ID
+        sync: false
       - key: MAIN_GUILD_ID
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
@@ -200,6 +206,8 @@ services:
       - key: DASHBOARD_URL
         sync: false
       - key: DEV_GUILD_ID
+        sync: false
+      - key: MASTER_DISCORD_ID
         sync: false
       - key: MAIN_GUILD_ID
         sync: false
@@ -265,6 +273,8 @@ services:
         sync: false
       - key: DEV_GUILD_ID
         sync: false
+      - key: MASTER_DISCORD_ID
+        sync: false
       - key: MAIN_GUILD_ID
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
@@ -319,6 +329,8 @@ services:
         sync: false
       - key: DEV_GUILD_ID
         sync: false
+      - key: MASTER_DISCORD_ID
+        sync: false
       - key: MAIN_GUILD_ID
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
@@ -371,6 +383,8 @@ services:
         sync: false
       - key: DEV_GUILD_ID
         sync: false
+      - key: MASTER_DISCORD_ID
+        sync: false
       - key: MAIN_GUILD_ID
         sync: false
       - key: DEV_AUTH_CHANNEL_ID
@@ -414,6 +428,8 @@ services:
       - key: DASHBOARD_URL
         sync: false
       - key: DEV_GUILD_ID
+        sync: false
+      - key: MASTER_DISCORD_ID
         sync: false
       - key: MAIN_GUILD_ID
         sync: false

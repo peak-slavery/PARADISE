@@ -22,6 +22,25 @@ export type ServerRow = {
   updated_at: string;
 };
 
+export type GuildAccessRow = {
+  id: string;
+  guild_id: string;
+  discord_user_id: string;
+  access_source: 'owner' | 'administrator' | 'inviter';
+  verified_at: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GuildAccessInsert = {
+  guild_id: string;
+  discord_user_id: string;
+  access_source: GuildAccessRow['access_source'];
+  verified_at?: string;
+  revoked_at?: string | null;
+};
+
 export type BotConfigRow = {
   id: string;
   guild_id: string;
@@ -164,6 +183,12 @@ export type Database = {
         Row: ServerRow;
         Insert: ServersInsert;
         Update: Partial<ServersInsert>;
+        Relationships: [];
+      };
+      guild_access: {
+        Row: GuildAccessRow;
+        Insert: GuildAccessInsert;
+        Update: Partial<GuildAccessInsert>;
         Relationships: [];
       };
       bot_configs: {

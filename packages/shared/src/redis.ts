@@ -1,5 +1,6 @@
 import { Redis } from '@upstash/redis';
 import type { Env } from './env.js';
+import { capacitySnapshot, type CapacitySnapshot } from './capacity.js';
 
 /**
  * Minimal key/value + counter surface used by every bot.
@@ -31,6 +32,8 @@ export interface Kv {
   commandsUsed(): number;
   /** True once usage crosses 80% of the daily budget. */
   nearBudget(): boolean;
+  /** Canonical capacity snapshot for quota/readiness reporting. */
+  capacity?(): CapacitySnapshot;
 }
 
 const DAY_MS = 86_400_000;
@@ -66,6 +69,19 @@ abstract class BaseKv implements Kv {
       console.error(`[kv] ${Math.round((this.commands / this.budget) * 100)}% of Redis command budget used`);
     }
     return near;
+  }
+
+  capacity(): CapacitySnapshot {
+    return capacitySnapshot({
+      service: 'shared-runtime',
+      provider: this.constructor.name === 'UpstashKv' ? 'upstash' : 'memory',
+      resource: 'redis-commands',
+      quota: this.budget,
+      usage: this.commands,
+      healthy: this.constructor.name === 'UpstashKv',
+      cooldownUntil: null,
+      resetAt: new Date(this.windowStart + DAY_MS).getTime(),
+    });
   }
 
   abstract incr(key: string, ttlSec: number): Promise<number>;

@@ -1,4 +1,11 @@
-import { DiscordAPIError, MessageFlags, type Channel, type CommandInteraction, type EmbedBuilder } from 'discord.js';
+import {
+  DiscordAPIError,
+  MessageFlags,
+  type ButtonInteraction,
+  type Channel,
+  type CommandInteraction,
+  type EmbedBuilder,
+} from 'discord.js';
 import type { Logger } from './logger.js';
 
 /** Discord returns these once an interaction token or message no longer exists. */
@@ -30,11 +37,15 @@ function isExpired(err: unknown): boolean {
  * Returns false when delivery failed entirely — callers should log, not throw.
  */
 export async function replyOrFollowUp(
-  interaction: CommandInteraction,
+  interaction: CommandInteraction | ButtonInteraction,
   payload: InteractionReplyPayload,
   log: Logger,
 ): Promise<boolean> {
   const isEphemeral = payload.ephemeral === true;
+  // Buttons have no command name; the customId is the useful identifier.
+  const label = (interaction as CommandInteraction).commandName
+    ?? (interaction as ButtonInteraction).customId
+    ?? 'interaction';
   const body = {
     allowedMentions: { parse: [] as never[] },
     embeds: payload.embeds,
@@ -50,7 +61,7 @@ export async function replyOrFollowUp(
     return true;
   } catch (err) {
     if (!isExpired(err)) {
-      log.warn({ err, command: interaction.commandName }, 'failed to send interaction reply');
+      log.warn({ err, command: label }, 'failed to send interaction reply');
       return false;
     }
 
@@ -61,7 +72,7 @@ export async function replyOrFollowUp(
       return true;
     } catch (followUpErr) {
       log.warn(
-        { err: followUpErr, command: interaction.commandName },
+        { err: followUpErr, command: label },
         'interaction token expired before a reply could be delivered',
       );
       return false;

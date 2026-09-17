@@ -18,7 +18,7 @@ export default async function ServersPage() {
       <PageHeader
         eyebrow="Fleet registry"
         title="Choose your waters"
-        description="Every guild you own that Ei Point is authorized for. Pick one to configure all eight bots, watch its activity stream or review antinuke incidents."
+        description="Every authorized Ei Point guild linked to your verified owner or administrator access. Pick one to configure all eight bots, watch its activity stream or review antinuke incidents."
       />
 
       {demo ? (
@@ -41,7 +41,8 @@ export default async function ServersPage() {
         <div className="rounded-3xl neu-raised p-10 text-center">
           <p className="text-sm font-semibold text-ink">No servers yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
-            Invite any Ei Flow bot to a Discord server you own. The bot
+            Invite any Ei Flow bot to a Discord server where you are the owner
+            or an administrator. The bot
             registers the guild on join and it will appear here once
             authorized.
           </p>

@@ -9,6 +9,7 @@ import {
   MessageFlags,
   PermissionsBitField,
   type APIEmbedField,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
   type ClientOptions,
   type GuildMember,
@@ -39,7 +40,7 @@ import { DEFAULT_POLICY, enforceRateLimit, type RateLimitPolicy } from './rate-l
 import { replyOrFollowUp } from './responses.js';
 import { sanitizeReason, sanitizeText } from './sanitize.js';
 import { isBotOperational } from './control.js';
-import type { BotControlState, BotServices, CommandContext } from './types.js';
+import type { BotControlState, BotServices, ButtonContext, ButtonHandler, CommandContext } from './types.js';
 import { BotInterlink } from './interlink.js';
 import type { InterlinkEvent } from './interlink.js';
 import { writeGuildWhitelist } from './whitelist.js';
@@ -102,6 +103,12 @@ export interface CreateBotOptions {
   queue?: QueueOptions;
   /** Commands exempt from the default limiter (read-only lookups). */
   unlimitedCommands?: string[];
+  /**
+   * Handler for button interactions this bot owns (pagination, confirmations).
+   * Routed through the same authorization, pause, dev-guild and rate-limit
+   * gates as a slash command, so a bot never has to reimplement them.
+   */
+  handleButton?: ButtonHandler;
   /** Wire up extra event listeners before login; optionally return shutdown cleanup. */
   setup?: (ctx: { client: Client; services: BotServices; log: Logger; env: Env }) => void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>;
 }
@@ -236,6 +243,44 @@ function buildContext(
   return ctx;
 }
 
+/**
+ * Build a `ButtonContext` from a button interaction. This is the
+ * option-less twin of `buildContext`; both share the same reply helpers so
+ * command and button code can render failures identically.
+ */
+function buildButtonContext(
+  interaction: ButtonInteraction,
+  client: Client,
+  services: BotServices,
+): ButtonContext {
+  const guildId = interaction.guildId ?? 'dm';
+  const log = services.log.child({ button: interaction.customId, guildId, userId: interaction.user.id });
+  const send = async (embed: EmbedBuilder, ephemeral = false): Promise<void> => {
+    await replyOrFollowUp(interaction, { embeds: [embed], ephemeral }, log);
+  };
+
+  return {
+    interaction,
+    client,
+    services,
+    log,
+    guildId,
+    userId: interaction.user.id,
+
+    async defer(ephemeral = false) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ flags: ephemeral ? MessageFlags.Ephemeral : undefined });
+      }
+    },
+
+    replyEmbed: (embed, ephemeral = false) => send(embed, ephemeral),
+    success: (title, description, ephemeral) => send(services.embeds.success(title, description), ephemeral),
+    error: (title, description, ephemeral) => send(services.embeds.error(title, description), ephemeral),
+    info: (title, description, ephemeral) => send(services.embeds.info(title, description), ephemeral),
+    warn: (title, description, ephemeral) => send(services.embeds.warning(title, description), ephemeral),
+  };
+}
+
 async function renderFailure(ctx: CommandContext, err: Error): Promise<void> {
   if (err instanceof ServiceUnavailableError) {
     await ctx.replyEmbed(ctx.services.embeds.unavailable(err.service));
@@ -243,6 +288,27 @@ async function renderFailure(ctx: CommandContext, err: Error): Promise<void> {
   }
   // Queue pressure is an expected overload condition, not a defect — it must
   // never reach Sentry as an unhandled error.
+  if (err instanceof QueueTimeoutError) {
+    await ctx.warn('Timed out', 'That request took too long to complete. Please try again.');
+    return;
+  }
+  if (err instanceof ServiceBusyError) {
+    await ctx.warn('Service busy', 'Too many requests are queued. Try again in a moment.');
+    return;
+  }
+  if (err instanceof UserError) {
+    await ctx.error('Request failed', err.message);
+    return;
+  }
+  await ctx.error('Unexpected error', 'This has been reported automatically. Please try again shortly.');
+}
+
+/** `renderFailure` for button contexts — identical failure rendering. */
+async function renderButtonFailure(ctx: ButtonContext, err: Error): Promise<void> {
+  if (err instanceof ServiceUnavailableError) {
+    await ctx.replyEmbed(ctx.services.embeds.unavailable(err.service));
+    return;
+  }
   if (err instanceof QueueTimeoutError) {
     await ctx.warn('Timed out', 'That request took too long to complete. Please try again.');
     return;
@@ -626,8 +692,87 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
   /* --- command dispatch -------------------------------------------------- */
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isButton()) {
+      if (!interaction.customId.startsWith('guild-auth:')) {
+        // Bot-owned buttons (pagination, confirmations). The handler decides
+        // whether it recognizes the customId; unknown buttons are ignored.
+        if (!options.handleButton) return;
+        const buttonCtx = buildButtonContext(interaction, client, services);
+        const requestId = randomUUID();
+        const startedAt = Date.now();
+        const baseOperation = {
+          command: `button:${interaction.customId.slice(0, 32)}`,
+          ...logOperationFields({ guildId: buttonCtx.guildId, requestId }),
+        };
+        const finishOperation = (status: string, errorClass?: string): void => {
+          log.info(
+            {
+              ...baseOperation,
+              ...logOperationFields({
+                guildId: buttonCtx.guildId,
+                requestId,
+                latencyMs: Date.now() - startedAt,
+                status,
+                errorClass,
+              }),
+            },
+            'button operation completed',
+          );
+        };
+        try {
+          if (buttonCtx.guildId !== 'dm' && !(await services.isAuthorized(buttonCtx.guildId))) {
+            await buttonCtx.error('Not authorized', 'This server is not enabled for this bot.');
+            finishOperation('unauthorized');
+            return;
+          }
+          if (buttonCtx.guildId !== 'dm') {
+            const state = await services.getControlState(buttonCtx.guildId);
+            if (!state.enabled || state.paused || state.serverPaused) {
+              await buttonCtx.warn('Bot paused', 'This bot is currently paused for this server.');
+              finishOperation('paused');
+              return;
+            }
+            if (buttonCtx.guildId === env.devGuildId && interaction.user.id !== env.masterDiscordId) {
+              await buttonCtx.error(
+                'Development server restricted',
+                'Only the master operator can use commands in the development server.',
+                true,
+              );
+              finishOperation('dev_operator_only');
+              return;
+            }
+          }
+          const verdict = await enforceRateLimit(
+            kv,
+            keys.rateLimit(env.botId, buttonCtx.guildId, interaction.user.id, 'button'),
+            { limit: 30, windowSec: (options.rateLimit ?? DEFAULT_POLICY).windowSec },
+            services.isOwner(interaction.user.id),
+          );
+          if (!verdict.allowed) {
+            await buttonCtx.warn('Slow down', `You can do that again in ${verdict.retryAfterSec}s.`);
+            finishOperation('rate_limited');
+            return;
+          }
+
+          const result = await guard(
+            'button',
+            () => options.handleButton!(buttonCtx),
+            { botId: env.botId, command: 'button', guildId: buttonCtx.guildId, userId: interaction.user.id },
+          );
+          if (!result.ok) {
+            await renderButtonFailure(buttonCtx, result.error);
+            finishOperation(result.expected ? 'expected_failure' : 'unexpected_failure', result.error.name);
+          } else {
+            finishOperation(result.value ? 'ok' : 'ignored');
+          }
+        } catch (err) {
+          log.error({ ...baseOperation, err }, 'unhandled button error');
+          await buttonCtx
+            .error('Unexpected error', 'This has been reported automatically. Please try again shortly.')
+            .catch(() => undefined);
+        }
+        return;
+      }
       try {
-        if (!interaction.customId.startsWith('guild-auth:')) return;
         const masterDiscordId = env.masterDiscordId;
         if (!masterDiscordId || interaction.user.id !== masterDiscordId) {
           await interaction.reply({ content: 'Only the master operator can approve guilds.', flags: MessageFlags.Ephemeral }).catch(() => undefined);
@@ -694,6 +839,16 @@ export async function createBot(options: CreateBotOptions): Promise<BotRuntime> 
         if (!state.enabled || state.paused || state.serverPaused) {
           await ctx.warn('Bot paused', 'This bot is currently paused for this server.');
           finishOperation('paused');
+          return;
+        }
+
+        // The development guild is an operator-only control plane. This gate
+        // applies before command-specific authorization and rate limiting so a
+        // non-master never receives a misleading cooldown response or consumes
+        // a limiter bucket by repeatedly probing operator commands.
+        if (guildId === env.devGuildId && interaction.user.id !== env.masterDiscordId) {
+          await ctx.error('Development server restricted', 'Only the master operator can use commands in the development server.', true);
+          finishOperation('dev_operator_only');
           return;
         }
 

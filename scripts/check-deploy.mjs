@@ -19,6 +19,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { botIds, botServices } from './fleet.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -44,10 +45,13 @@ try {
     ok('render.yaml has the &bot-common anchor');
   }
   const serviceNames = [...yaml.matchAll(/^  - name: (eiflow-[\w-]+)$/gm)].map((m) => m[1]);
-  const expected = [
-    'eiflow-niko-robin', 'eiflow-boahancock', 'eiflow-nami', 'eiflow-cyrene',
-    'eiflow-zoro', 'eiflow-shanks', 'eiflow-luffy', 'eiflow-sanji',
-  ];
+  let expected;
+  try {
+    expected = botServices();
+  } catch (e) {
+    bad(e.message);
+    expected = serviceNames;
+  }
   const missing = expected.filter((n) => !serviceNames.includes(n));
   const extra = serviceNames.filter((n) => !expected.includes(n));
   if (missing.length === 0 && extra.length === 0) {
@@ -135,8 +139,10 @@ try {
     bad('Mongo bootstrap defines the conflicting ai_ctx_updated index');
   } else if (!/ai_ctx_ttl/.test(mongoIndexes) || !/require\('\.\/indexes\.cjs'\)/.test(mongoInit)) {
     bad('Mongo bootstrap does not use the canonical index contract');
+  } else if (/const\s+db\s*=\s*db\.getSiblingDB/.test(mongoInit) || !/const\s+database\s*=\s*db\.getSiblingDB/.test(mongoInit) || !/database\[index\.collection\]\.createIndex/.test(mongoInit)) {
+    bad('Mongo bootstrap shadows mongosh db or does not use the resolved database handle');
   } else {
-    ok('Mongo bootstrap uses the canonical shared index contract');
+    ok('Mongo bootstrap uses the canonical shared index contract and safe database handle');
   }
 
   const productionSmoke = read('scripts/production-smoke.mjs');
@@ -162,6 +168,10 @@ try {
   const migrationFiles = list('infra/supabase/migrations')
     .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/.test(name))
     .sort();
+  const sequenceErrors = migrationFiles
+    .map((name, index) => ({ name, sequence: Number(name.slice(0, 4)), expected: index + 1 }))
+    .filter((entry) => entry.sequence !== entry.expected)
+    .map((entry) => `${entry.name} is sequence ${entry.sequence}, expected ${String(entry.expected).padStart(4, '0')}`);
   if (
     migrationFiles.length === 0 ||
     !/private\.schema_migrations/.test(migrationRunner) ||
@@ -169,15 +179,25 @@ try {
     !/ON_ERROR_STOP=1/.test(migrationRunner)
   ) {
     bad('Supabase migration runner is not deterministic or transactional');
+  } else if (sequenceErrors.length) {
+    bad(`Supabase migration sequence is not contiguous: ${sequenceErrors.join(', ')}`);
+  } else if (!/Supabase migrations must be contiguous from 0001/.test(migrationRunner)) {
+    bad('Supabase migration runner does not enforce a contiguous sequence');
+  } else if (!/baseline must be the first migration/.test(migrationRunner)) {
+    bad('Supabase migration runner does not restrict baseline marking to the first migration');
+  } else if (!/ledger contains unknown migrations/.test(migrationRunner)) {
+    bad('Supabase migration runner does not detect ledger drift from removed migrations');
   } else {
-    ok(`Supabase migration runner is transactional (${migrationFiles.length} migration)`);
+    ok(`Supabase migration runner is transactional and enforces sequence invariants (${migrationFiles.length} migration)`);
   }
 
   const restoreDrill = read('scripts/restore-drill.mjs');
   if (!/restore_drill_\$\{Date\.now\(\)\}/.test(restoreDrill) || !/listIndexes\(\)/.test(restoreDrill)) {
     bad('Mongo restore drill does not verify isolation and index recovery');
+  } else if (!/verifyRestoreParity/.test(restoreDrill)) {
+    bad('Mongo restore drill does not verify field-level data parity (count-only checks miss silent corruption)');
   } else {
-    ok('Mongo restore drill verifies isolated restore and indexes');
+    ok('Mongo restore drill verifies isolation, data parity, and index recovery');
   }
 
   const rollbackDrill = read('scripts/rollback-drill.mjs');
@@ -227,8 +247,7 @@ try {
   if (contractErrors.length === 0) ok('Render provider and bounded model env contracts are complete');
   else for (const message of contractErrors) bad(message);
 
-  const staleDeploymentReferences = [
-    'GROQ_' + 'AUTOMOD_API_KEY',
+  const staleDeploymentReferences = [    'GROQ_' + 'AUTOMOD_API_KEY',
     'provider.' + 'groq_automod',
     'AUTOMOD_' + 'SLM_MODEL',
     'llama-3.1-' + '8b-instant',
@@ -249,40 +268,50 @@ try {
 
 // ---------------------------------------------------------------------------
 console.log('\x1b[1m[2/5] bot packages\x1b[0m');
-const bots = list('bots').filter((d) => isDir(path.join('bots', d)));
-if (bots.length !== 8) bad(`expected 8 bots, found ${bots.length}`);
-else ok(`8 bots in bots/ (${bots.join(', ')})`);
+let bots;
+try {
+  bots = botIds();
+  ok(`8 bots in bots/ (${bots.join(', ')})`);
+} catch (e) {
+  bots = [];
+  bad(e.message);
+}
 
   const requiredScripts = { start: 'tsx src/index.ts', 'deploy:commands': 'tsx scripts/deploy-commands.ts' };
+const packageErrors = [];
 for (const bot of bots) {
   try {
     const pkg = JSON.parse(read(`bots/${bot}/package.json`));
     for (const [name, expected] of Object.entries(requiredScripts)) {
       if (pkg.scripts?.[name] !== expected) {
-        bad(`bots/${bot}: scripts.${name} should be "${expected}", got "${pkg.scripts?.[name]}"`);
+        packageErrors.push(`bots/${bot}: scripts.${name} should be "${expected}", got "${pkg.scripts?.[name]}"`);
       }
     }
     if (!exists(`bots/${bot}/scripts/deploy-commands.ts`)) {
-      bad(`bots/${bot}: scripts/deploy-commands.ts is missing`);
+      packageErrors.push(`bots/${bot}: scripts/deploy-commands.ts is missing`);
     }
     if (!exists(`bots/${bot}/src/index.ts`)) {
-      bad(`bots/${bot}: src/index.ts is missing`);
+      packageErrors.push(`bots/${bot}: src/index.ts is missing`);
     }
     if (!exists(`bots/${bot}/.env.example`)) {
-      bad(`bots/${bot}: .env.example is missing`);
+      packageErrors.push(`bots/${bot}/.env.example is missing`);
     } else {
       const ex = read(`bots/${bot}/.env.example`);
       for (const k of ['BOT_ID', 'BOT_NAME', 'DISCORD_CLIENT_ID', 'EMBED_COLOR']) {
         if (!new RegExp(`^${k}=`, 'm').test(ex)) {
-          bad(`bots/${bot}/.env.example missing ${k}`);
+          packageErrors.push(`bots/${bot}/.env.example missing ${k}`);
         }
       }
     }
   } catch (e) {
-    bad(`bots/${bot}: ${e.message}`);
+    packageErrors.push(`bots/${bot}: ${e.message}`);
   }
-  }
-  ok('all 8 bot packages have start, deploy:commands, and required files');
+}
+if (packageErrors.length === 0 && bots.length > 0) {
+  ok(`all ${bots.length} bot packages have start, deploy:commands, and required files`);
+} else {
+  for (const message of packageErrors) bad(message);
+}
 
   const sensitiveCommands = [
     ['bots/shanks/src/commands/ban.ts', 'requirePermission(ctx, PermissionFlagsBits.BanMembers'],
@@ -329,6 +358,19 @@ try {
   if (!Array.isArray(vercel.regions) || vercel.regions.length === 0) warn('vercel.json has no regions — deploy will pick a default');
   else ok(`vercel.json regions: ${vercel.regions.join(', ')}`);
 } catch (e) { bad(`vercel.json: ${e.message}`); }
+
+// Card-registry CI wiring: the scanner gate alone would not catch a runtime
+// catalog that disagrees with the committed manifest, so both steps must exist.
+try {
+  const ci = read('.github/workflows/ci.yml');
+  if (!/cards:check -w @eiflow\/bot-luffy/.test(ci)) {
+    bad('CI does not run the card registry scanner gate');
+  } else if (!/smoke:luffy/.test(ci)) {
+    bad('CI does not run the Luffy card smoke test (manifest/catalog/probability parity)');
+  } else {
+    ok('CI runs both card registry validation and the Luffy card smoke test');
+  }
+} catch (e) { bad(`ci.yml: ${e.message}`); }
 
 // ---------------------------------------------------------------------------
 console.log('\x1b[1m[4/5] shared runtime\x1b[0m');

@@ -16,12 +16,12 @@
 const DB_NAME = process.env.MONGODB_DB || 'eiflow';
 const { LOG_TTL_SECONDS, indexes } = require('./indexes.cjs');
 
-const db = db.getSiblingDB(DB_NAME);
+const database = db.getSiblingDB(DB_NAME);
 
 // --- Collections -----------------------------------------------------------
 ['logs', 'xp', 'card_games', 'inventories', 'ai_context'].forEach((name) => {
-  if (!db.getCollectionNames().includes(name)) {
-    db.createCollection(name);
+  if (!database.getCollectionNames().includes(name)) {
+    database.createCollection(name);
     print(`created collection: ${name}`);
   } else {
     print(`collection exists: ${name}`);
@@ -29,11 +29,11 @@ const db = db.getSiblingDB(DB_NAME);
 });
 
 for (const index of indexes) {
-  db[index.collection].createIndex(index.key, { name: index.name, ...index.options });
+  database[index.collection].createIndex(index.key, { name: index.name, ...index.options });
 }
 
 // --- Document validators (cheap safety net, validationLevel: moderate) ------
-db.runCommand({
+database.runCommand({
   collMod: 'logs',
   validator: {
     $jsonSchema: {

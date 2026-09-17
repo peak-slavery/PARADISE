@@ -21,6 +21,16 @@ import {
   type AiRoute,
   type ChatMessage,
 } from './providers.js';
+import { DailyRequestBudget } from './resilience.js';
+
+/**
+ * Per-process daily AI request budget feeding the shared capacity bands.
+ * AI work is optional-class workload, so it sheds at the same thresholds as
+ * every other non-critical workload (80% optimize-only, 95%+ emergency block).
+ * The default quota is deliberately generous per instance; providers apply
+ * their own upstream limits on top of this.
+ */
+export const aiRequestBudget = new DailyRequestBudget(300);
 
 /**
  * The single path every AI command takes: cooldown → queue → route chain →
@@ -155,6 +165,15 @@ export async function runCompletion(ctx: CommandContext, opts: RunCompletionOpti
     assistantModel: config.assistantModel || ctx.services.env.assistantModel,
   };
 
+  // Capacity admission: AI is optional-class work, so it sheds before core and
+  // durable workloads as the daily budget fills. Checked after the defer so the
+  // user always gets a real reply rather than a silent failure.
+  const admission = aiRequestBudget.decide('cyrene', route);
+  if (!admission.allowed) {
+    await ctx.warn('AI is paused right now', 'The AI request budget is nearly exhausted. Please try again later.');
+    return;
+  }
+
   if (!ctx.services.isOwner(ctx.userId)) {
     const verdict = await ctx.services.redis
       .allow(keys.aiCooldown(ctx.guildId, ctx.userId), COOLDOWN_LIMIT, COOLDOWN_WINDOW_SEC)
@@ -186,6 +205,9 @@ export async function runCompletion(ctx: CommandContext, opts: RunCompletionOpti
         }),
       { timeoutMs: QUEUE_TIMEOUT_MS, maxPending: QUEUE_MAX_PENDING },
     );
+    // Count only requests that were actually issued, feeding the shared
+    // capacity bands so AI sheds alongside every other workload under pressure.
+    aiRequestBudget.record();
   } catch (err) {
     if (err instanceof QueueTimeoutError) {
       await ctx.warn('Took too long', 'The AI did not answer in time. Please try again.');

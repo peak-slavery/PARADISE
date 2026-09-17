@@ -53,6 +53,8 @@ export function ConfigForm({ guildId, bot, initialValues, updatedAt, demo }: Con
   }
 
   function resetToDefaults() {
+    if (dirty && !window.confirm('Discard the unsaved changes on this panel?')) return;
+
     const next: ConfigValues = {};
     for (const field of bot.fields) {
       next[field.key] = field.default;
@@ -307,7 +309,7 @@ export function ConfigForm({ guildId, bot, initialValues, updatedAt, demo }: Con
             Stored as a single jsonb blob in{' '}
             <code className="font-mono">bot_configs.config</code> keyed on{' '}
             <code className="font-mono">(guild_id, bot_id)</code>. RLS permits
-            writes only for guilds you own.
+            writes only for guilds where your account has verified access.
           </p>
         </div>
       </aside>

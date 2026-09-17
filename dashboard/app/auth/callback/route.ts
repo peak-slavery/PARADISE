@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { resolveSiteOrigin } from '@/lib/site-origin';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
+import { reconcileGuildAccess, verifyDiscordGuilds } from '@/lib/discord-verify';
 
 const STABLE_ERRORS = {
   missingCode: 'missing_code',
@@ -41,15 +42,33 @@ export async function GET(request: NextRequest) {
     return redirectToLogin(origin, STABLE_ERRORS.notConfigured);
   }
 
+  let providerToken: string | null = null;
   try {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       logExchangeFailure(error);
       return redirectToLogin(origin, STABLE_ERRORS.exchangeFailed);
     }
+    providerToken = data.session?.provider_token ?? null;
   } catch (error) {
     logExchangeFailure(error);
     return redirectToLogin(origin, STABLE_ERRORS.exchangeFailed);
+  }
+
+  // Reconcile only after a successful, complete Discord response. The provider
+  // token is read from the exchange result and never sent to the browser.
+  try {
+    const admin = createSupabaseAdminClient();
+    if (admin && providerToken) {
+      const verification = await verifyDiscordGuilds(providerToken);
+      if (verification.ok && verification.discordUserId) {
+        await reconcileGuildAccess(admin, verification);
+      }
+    }
+  } catch (error) {
+    console.error('[auth/callback] guild access reconciliation skipped', {
+      error: error instanceof Error ? error.message : 'unknown',
+    });
   }
 
   return NextResponse.redirect(new URL(target, origin));

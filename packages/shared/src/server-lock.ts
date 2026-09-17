@@ -4,6 +4,7 @@ import {
   ButtonStyle,
   EmbedBuilder,
   Events,
+  AuditLogEvent,
   type Client,
 } from 'discord.js';
 import type { TypedSupabase } from './db/supabase.js';
@@ -58,6 +59,50 @@ async function upsertServer(
     },
     { onConflict: 'guild_id' },
   );
+}
+
+async function recordBotInviter(
+  client: Client,
+  supabase: TypedSupabase | null,
+  guildId: string,
+): Promise<void> {
+  if (!supabase || !client.user) return;
+
+  try {
+    const audit = await client.guilds.cache.get(guildId)?.fetchAuditLogs({
+      type: AuditLogEvent.BotAdd,
+      limit: 10,
+    });
+    if (!audit) return;
+
+    const now = Date.now();
+    const entry = audit.entries.find((candidate) => {
+      const executorId = candidate.executor?.id;
+      const targetId = candidate.target && 'id' in candidate.target ? candidate.target.id : null;
+      return Boolean(
+        executorId &&
+          targetId === client.user?.id &&
+          now - candidate.createdTimestamp >= 0 &&
+          now - candidate.createdTimestamp <= 15 * 60_000,
+      );
+    });
+    const inviterId = entry?.executor?.id;
+    if (!inviterId) return;
+
+    await supabase.from('guild_access').upsert(
+      {
+        guild_id: guildId,
+        discord_user_id: inviterId,
+        access_source: 'inviter',
+        verified_at: new Date(entry.createdTimestamp).toISOString(),
+        revoked_at: null,
+      },
+      { onConflict: 'guild_id,discord_user_id,access_source' },
+    );
+  } catch {
+    // Audit-log access is optional and may be unavailable without the View
+    // Audit Log permission. Never block the server-lock decision on it.
+  }
 }
 
 async function postAuthorizationRequest(
@@ -165,6 +210,8 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): () => vo
         await leaveUnauthorized(guild);
         return;
       }
+
+      await recordBotInviter(client, deps.supabase, guild.id);
 
       deps.record({
         action: 'server_lock.joined',

@@ -27,7 +27,15 @@ const migrations = readdirSync(migrationsDir)
   .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/.test(name))
   .sort();
 if (migrations.length === 0) throw new Error('no Supabase migrations found');
-if (baseline && !migrations.includes(baseline)) throw new Error(`unknown baseline migration: ${baseline}`);
+for (const [index, filename] of migrations.entries()) {
+  const sequence = Number(filename.slice(0, 4));
+  if (sequence !== index + 1) {
+    throw new Error(`Supabase migrations must be contiguous from 0001: ${filename} is sequence ${sequence}, expected ${String(index + 1).padStart(4, '0')}`);
+  }
+}
+if (baseline && baseline !== migrations[0]) {
+  throw new Error(`baseline must be the first migration (${migrations[0]}): ${baseline}`);
+}
 
 function migrationChecksum(filename) {
   return createHash('sha256').update(readFileSync(path.join(migrationsDir, filename))).digest('hex');
@@ -45,32 +53,43 @@ function psql(args, options = {}) {
   return result.stdout;
 }
 
-psql([databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', `
+// Ledger bootstrap must be a single transaction: a schema created without its
+// checksum column, or a column made NOT NULL without a backfill, would leave
+// the ledger unusable and let migrations be silently skipped or re-run.
+psql([databaseUrl, '-v', 'ON_ERROR_STOP=1', '-1'], {
+  input: `
   create schema if not exists private;
   create table if not exists private.schema_migrations (
     filename text primary key,
     applied_at timestamptz not null default now(),
     checksum text not null
   );
-`]);
-
-psql([databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', `
   alter table private.schema_migrations
-  add column if not exists checksum text;
+    add column if not exists checksum text;
   update private.schema_migrations
-  set checksum = 'legacy'
-  where checksum is null;
+    set checksum = 'legacy'
+    where checksum is null;
   alter table private.schema_migrations
-  alter column checksum set not null;
-`]);
+    alter column checksum set not null;
+`,
+});
 
 if (baseline) {
   const checksum = migrationChecksum(baseline);
-  psql([databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', `
-    insert into private.schema_migrations (filename, checksum)
-    values ('${baseline.replace(/'/g, "''")}', '${checksum}')
-    on conflict (filename) do nothing;
-  `]);
+  // A conflicting ledger row must abort the run: marking it as already-applied
+  // while it carries a different checksum would let a divergent baseline pass.
+  const conflict = psql([databaseUrl, '-t', '-A', '-N', '-c', `
+    select checksum from private.schema_migrations where filename = '${baseline.replace(/'/g, "''")}';
+  `]).trim();
+  if (conflict && conflict !== checksum) {
+    throw new Error(`baseline ${baseline} already recorded with a different checksum — refusing to overwrite`);
+  }
+  if (!conflict) {
+    psql([databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', `
+      insert into private.schema_migrations (filename, checksum)
+      values ('${baseline.replace(/'/g, "''")}', '${checksum}');
+    `]);
+  }
   console.log(`Marked existing database baseline: ${baseline}`);
 }
 
@@ -82,6 +101,15 @@ const applied = new Map(
   }),
 );
 
+// Ledger drift: a row that no longer corresponds to any file means a migration
+// was deleted after it ran. The schema is then ahead of the source of truth,
+// and re-creating that filename would silently skip a changed migration.
+const unknown = [...applied.keys()].filter((filename) => !migrations.includes(filename));
+if (unknown.length) {
+  throw new Error(`ledger contains unknown migrations (removed from source?): ${unknown.join(', ')}`);
+}
+
+let newlyApplied = 0;
 for (const filename of migrations) {
   const checksum = migrationChecksum(filename);
   const recorded = applied.get(filename);
@@ -93,7 +121,8 @@ for (const filename of migrations) {
   psql([databaseUrl, '-v', 'ON_ERROR_STOP=1', '-1'], {
     input: `\\i '${file.replace(/'/g, "''")}'\ninsert into private.schema_migrations (filename, checksum) values ('${filename.replace(/'/g, "''")}', '${checksum}');\n`,
   });
+  newlyApplied += 1;
   console.log(`Applied ${filename}`);
 }
 
-console.log(`Supabase migrations complete (${migrations.length} files, ${migrations.length - applied.size} newly applied).`);
+console.log(`Supabase migrations complete (${migrations.length} files, ${newlyApplied} newly applied).`);

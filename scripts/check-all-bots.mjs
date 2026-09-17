@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { localBotTuples } from './fleet.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const raw = readFileSync(path.join(ROOT, 'temp cred.txt'), 'utf8');
@@ -19,16 +20,7 @@ function section(headerRe) {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
-const BOTS = [
-  ['shanks', 'Shanks', 3101],
-  ['sanji', 'Sanji', 3102],
-  ['zoro', 'Zoro', 3103],
-  ['boahancock', 'Boa hancock', 3104],
-  ['nami', 'Nami', 3105],
-  ['luffy', 'Luffy', 3106],
-  ['niko-robin', 'Niko Robin', 3107],
-  ['cyrene', 'Cyrene', 3108],
-];
+const BOTS = localBotTuples();
 
 let down = 0;
 let overBudget = 0;

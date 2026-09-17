@@ -83,6 +83,7 @@ function buildEnv(botId, port) {
     HMAC_SECRET: vals.hmac,
     HEALTH_TOKEN: vals.healthToken,
     OWNER_IDS: raw.match(/^#master id=(\d+)/m)?.[1] ?? '',
+    MASTER_DISCORD_ID: raw.match(/^#master id=(\d+)/m)?.[1] ?? '',
     DASHBOARD_URL: 'https://ei-point-dashboard.vercel.app',
     DEV_GUILD_ID: raw.match(/^#dev server=(\d+)/m)?.[1] ?? '',
     MAIN_GUILD_ID: raw.match(/^#main server=(\d+)/m)?.[1] ?? '',

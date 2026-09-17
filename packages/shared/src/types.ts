@@ -1,4 +1,5 @@
 import type {
+  ButtonInteraction,
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
@@ -86,6 +87,31 @@ export interface CommandModule {
    */
   access?: 'public' | 'dev';
 }
+
+/**
+ * Button interactions carry no options, so this is `CommandContext` minus the
+ * option helpers. Handlers are dispatched through the shared runner and pass
+ * through the same authorization, pause, dev-guild and rate-limit gates as a
+ * slash command.
+ */
+export interface ButtonContext {
+  interaction: ButtonInteraction;
+  client: Client;
+  services: BotServices;
+  log: Logger;
+  guildId: string;
+  userId: string;
+
+  defer(ephemeral?: boolean): Promise<void>;
+  replyEmbed(embed: EmbedBuilder, ephemeral?: boolean): Promise<void>;
+  success(title: string, description?: string, ephemeral?: boolean): Promise<void>;
+  error(title: string, description?: string, ephemeral?: boolean): Promise<void>;
+  info(title: string, description?: string, ephemeral?: boolean): Promise<void>;
+  warn(title: string, description?: string, ephemeral?: boolean): Promise<void>;
+}
+
+/** A bot-owned button handler. Return `false` for customIds this bot ignores. */
+export type ButtonHandler = (ctx: ButtonContext) => Promise<boolean>;
 
 export interface EventContext {
   client: Client;

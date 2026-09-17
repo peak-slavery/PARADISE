@@ -8,6 +8,7 @@
 import { createHmac } from 'node:crypto';
 import { MongoClient } from 'mongodb';
 import { createClient } from '@supabase/supabase-js';
+import { botIds, BOT_META } from './fleet.mjs';
 
 const requiredString = (name) => {
   const value = process.env[name]?.trim();
@@ -214,16 +215,7 @@ await check('hmac tampering and cross-bot rejection', async (pass) => {
   pass('complete HMAC map, stale, tampered, and cross-bot requests rejected');
 });
 
-const bots = [
-  ['shanks', 'eiflow-shanks'],
-  ['sanji', 'eiflow-sanji'],
-  ['zoro', 'eiflow-zoro'],
-  ['boahancock', 'eiflow-boahancock'],
-  ['nami', 'eiflow-nami'],
-  ['luffy', 'eiflow-luffy'],
-  ['niko-robin', 'eiflow-niko-robin'],
-  ['cyrene', 'eiflow-cyrene'],
-];
+const bots = botIds().map((id) => [id, BOT_META[id].service]);
 const botUrls = Object.fromEntries(
   bots.map(([id]) => [id, process.env[`${id.toUpperCase().replace(/-/g, '_')}_URL`]]),
 );

@@ -1,5 +1,15 @@
 import type { Env, Logger } from '@eiflow/shared';
 
+import {
+  DEFAULT_RESILIENCE_POLICY,
+  ProviderHealthRegistry,
+  classifyFailure,
+  delay,
+  retryDelayMs,
+  shouldRetry,
+  type FailureKind,
+} from './resilience.js';
+
 /**
  * Model routing — two independent routes, each with its own model and its own
  * ordered fallback list. The routes never share a chain: `/cyrene` can never
@@ -287,9 +297,22 @@ export interface CompletionResult {
 }
 
 /**
- * Walks one route in order, logging and swallowing each failure. Never throws
- * for a single provider; throws AllProvidersFailedError only when the route is
- * exhausted (which the caller renders as a friendly embed).
+ * Process-wide provider health. Deliberately in-process: a bot instance owns its
+ * own upstream keys, so there is no cross-instance state worth a Redis
+ * round-trip, and Redis may be unavailable (bounded fallback).
+ */
+export const providerHealth = new ProviderHealthRegistry();
+
+/**
+ * Walks one route in order, retrying transient failures up to the bounded
+ * attempt budget and skipping providers whose circuit breaker is open.
+ *
+ * Never throws for a single provider; throws AllProvidersFailedError only when
+ * the route is exhausted (which the caller renders as a friendly embed).
+ *
+ * Every provider error is classified into rate_limited / transient / permanent
+ * and recorded, so a throttled or broken provider is parked instead of being
+ * retried in full on every request.
  */
 export async function completeWithFallback(
   route: RouteDescriptor,
@@ -303,14 +326,53 @@ export async function completeWithFallback(
 
   const failures: string[] = [];
   for (const provider of usable) {
-    try {
-      const text = await provider.complete(messages, opts.signal);
-      return { text, provider: provider.name, model: provider.model };
-    } catch {
-      // Keep provider response bodies and exception messages out of logs/Sentry;
-      // the provider id and route are sufficient for fallback diagnostics.
-      failures.push(`${provider.name}: provider_error`);
-      opts.log.warn({ provider: provider.id, route: route.route }, 'ai provider failed, falling through');
+    const health = providerHealth.get(provider.id);
+
+    // Skip providers the breaker has parked. This is what stops a persistently
+    // failing provider from consuming the request budget on every call.
+    const admission = providerHealth.admit(provider.id);
+    if (!admission.allowed) {
+      failures.push(`${provider.name}: skipped (${admission.reason})`);
+      opts.log.warn(
+        { provider: provider.id, route: route.route, state: admission.state },
+        'ai provider skipped by circuit breaker',
+      );
+      continue;
+    }
+
+    for (let attempt = 1; attempt <= DEFAULT_RESILIENCE_POLICY.maxAttempts; attempt += 1) {
+      try {
+        const text = await provider.complete(messages, opts.signal);
+        providerHealth.success(provider.id);
+        return { text, provider: provider.name, model: provider.model };
+      } catch (error) {
+        // Keep provider response bodies and exception messages out of logs and
+        // Sentry; the classification and provider id are sufficient diagnostics.
+        const kind: FailureKind = classifyFailure(error);
+        providerHealth.failure(provider.id, kind);
+
+        if (shouldRetry(kind, attempt)) {
+          opts.log.warn(
+            { provider: provider.id, route: route.route, attempt, kind },
+            'ai provider failed, retrying after backoff',
+          );
+          try {
+            await delay(retryDelayMs(attempt), opts.signal);
+          } catch {
+            // The caller aborted mid-backoff: stop retrying, do not fall through
+            // to another provider on a cancelled request.
+            throw error;
+          }
+          continue;
+        }
+
+        failures.push(`${provider.name}: ${kind}`);
+        opts.log.warn(
+          { provider: provider.id, route: route.route, kind, state: health.state },
+          'ai provider failed, falling through',
+        );
+        break;
+      }
     }
   }
 

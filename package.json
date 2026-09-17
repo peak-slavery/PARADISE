@@ -21,7 +21,7 @@
     "start": "npm run start -w @eipoint/dashboard",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test scripts/credential-keys.test.mjs scripts/bot-env.test.mjs scripts/check-local-config.test.mjs scripts/pm2-config.test.mjs scripts/render-config.test.mjs scripts/supabase-migrations.test.mjs scripts/triage-fleet.test.mjs && npm run test --workspaces --if-present",
+    "test": "node --test scripts/credential-keys.test.mjs scripts/bot-env.test.mjs scripts/check-local-config.test.mjs scripts/fleet.test.mjs scripts/pm2-config.test.mjs scripts/render-config.test.mjs scripts/restore-drill.test.mjs scripts/supabase-migrations.test.mjs scripts/triage-fleet.test.mjs && npm run test --workspaces --if-present",
     "test:local": "node scripts/test-local-stack.mjs",
     "deploy:commands": "node scripts/deploy-commands-all.mjs",
     "check:bots": "node scripts/check-all-bots.mjs",
@@ -33,6 +33,7 @@
     "smoke:production": "node scripts/production-smoke.mjs",
     "monitor:production": "node scripts/production-monitor.mjs",
     "triage:fleet": "node scripts/triage-fleet.mjs",
+    "smoke:luffy": "tsx scripts/luffy-smoke.mjs",
     "archive:retention": "node scripts/archive-retention.mjs",
     "drill:restore": "node scripts/restore-drill.mjs",
     "drill:rollback": "node scripts/rollback-drill.mjs",
@@ -50,6 +51,7 @@
     "@typescript-eslint/eslint-plugin": "^8.8.1",
     "@typescript-eslint/parser": "^8.8.1",
     "eslint": "^9.13.0",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "vitest": "^5.0.0"
   }

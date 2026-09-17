@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { GuildHeader } from '@/components/dashboard/GuildHeader';
+import { requireGuildAccess } from '@/lib/authz';
 import { getServer } from '@/lib/data/servers';
 
 export default async function GuildLayout({
@@ -11,13 +12,11 @@ export default async function GuildLayout({
   params: Promise<{ guildId: string }>;
 }) {
   const { guildId } = await params;
+  // Layouts and pages render concurrently in Next, so keep this explicit
+  // authorization check even though child pages repeat it before data reads.
+  await requireGuildAccess(guildId);
   const server = await getServer(guildId);
-
-  // Either the guild doesn't exist, or RLS hid it because the caller doesn't
-  // own it. Both are a 404 — never a 403, which would confirm the row exists.
-  if (!server) {
-    notFound();
-  }
+  if (!server || server.authorized !== true) notFound();
 
   return (
     <div className="pt-1">

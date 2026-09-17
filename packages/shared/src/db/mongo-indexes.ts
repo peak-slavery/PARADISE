@@ -4,7 +4,19 @@ const contract = createRequire(import.meta.url)('../../../../infra/mongo/indexes
   readonly LOG_TTL_SECONDS: number;
   readonly AI_CONTEXT_TTL_SECONDS: number;
   readonly indexes: readonly {
-    readonly collection: 'logs' | 'xp' | 'card_games' | 'inventories' | 'ai_context';
+    readonly collection:
+      | 'logs'
+      | 'xp'
+      | 'card_games'
+      | 'inventories'
+      | 'ai_context'
+      | 'card_definitions'
+      | 'card_instances'
+      | 'card_packs'
+      | 'card_player_currency'
+      | 'card_trades'
+      | 'card_acquisitions'
+      | 'card_transactions';
     readonly name: string;
     readonly key: Record<string, 1 | -1>;
     readonly options: { unique?: true; expireAfterSeconds?: number };

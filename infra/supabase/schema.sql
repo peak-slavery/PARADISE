@@ -6,9 +6,10 @@
 -- Compatibility entrypoint: applies every migration in filename order.
 --
 -- Prefer migration-aware execution with a persistent migration ledger:
---   psql "$SUPABASE_DB_URL" -f infra/supabase/apply-migrations.sql
+--   npm run migrate:supabase
 --
--- The ledger makes execution idempotent and records which migrations have run.
+-- The runner applies files from infra/supabase/migrations in lexical order,
+-- records them in the ledger, and stops on the first failed migration.
 --
 -- High-volume activity data (logs, xp, card games, inventories, ai context)
 -- lives in MongoDB — see infra/mongo/init.js. Do NOT put it here; each free
@@ -209,6 +210,31 @@ create index if not exists servers_owner_id_idx on public.servers (owner_id);
 create index if not exists servers_authorized_idx on public.servers (authorized) where authorized = true;
 
 comment on column public.servers.authorized is 'Server-lock gate. false => every bot auto-leaves the guild.';
+
+-- ---------------------------------------------------------------------------
+-- guild_access — trusted dashboard relationships populated only by server-side
+-- Discord verification or bot audit-log attribution. Browser roles cannot write.
+-- ---------------------------------------------------------------------------
+create table if not exists public.guild_access (
+  id                uuid primary key default gen_random_uuid(),
+  guild_id          text not null references public.servers(guild_id) on delete cascade,
+  discord_user_id   text not null check (discord_user_id ~ '^\\d{17,20}$'),
+  access_source     text not null check (access_source in ('owner', 'administrator', 'inviter')),
+  verified_at       timestamptz not null default now(),
+  revoked_at        timestamptz,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  unique (guild_id, discord_user_id, access_source)
+);
+
+create index if not exists guild_access_user_idx
+  on public.guild_access (discord_user_id, guild_id)
+  where revoked_at is null;
+create index if not exists guild_access_guild_idx
+  on public.guild_access (guild_id)
+  where revoked_at is null;
+
+comment on table public.guild_access is 'Server-verified owner, administrator, or bot-inviter relationships; browser writes are forbidden.';
 
 -- ---------------------------------------------------------------------------
 -- bot_configs — one JSON blob per (guild, bot). Flexible so adding a setting to
@@ -457,6 +483,8 @@ alter table public.bot_states enable row level security;
 alter table public.server_settings enable row level security;
 alter table public.secret_records enable row level security;
 alter table public.guild_whitelists enable row level security;
+alter table public.guild_access enable row level security;
+revoke all on public.guild_access from anon, authenticated;
 
 -- Helper: does the current dashboard user own this guild?
 create or replace function public.owns_guild(p_guild_id text)
@@ -499,9 +527,44 @@ as $$
   );
 $$;
 
+-- Trusted owner/administrator/inviter relationships are written only by
+-- service-role reconciliation. Existing owner rows remain a compatibility
+-- fallback until the first successful Discord verification.
+create or replace function public.has_guild_access(p_guild_id text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_master_user()
+    or exists (
+      select 1
+      from public.guild_access a
+      join public.users u on u.discord_id = a.discord_user_id
+      where a.guild_id = p_guild_id
+        and a.revoked_at is null
+        and u.id = auth.uid()
+    )
+    or public.owns_guild(p_guild_id);
+$$;
+
+revoke all on function public.has_guild_access(text) from public;
+grant execute on function public.has_guild_access(text) to authenticated, service_role;
+
 -- Same lockdown as `owns_guild` above.
 revoke all on function public.is_master_user() from public;
 grant execute on function public.is_master_user() to authenticated, service_role;
+
+ drop policy if exists guild_access_self_select on public.guild_access;
+create policy guild_access_self_select on public.guild_access
+  for select using (
+    public.is_master_user()
+    or exists (
+      select 1 from public.users u
+      where u.id = auth.uid() and u.discord_id = guild_access.discord_user_id
+    )
+  );
 
 drop policy if exists admin_users_master_read on public.admin_users;
 create policy admin_users_master_read on public.admin_users
@@ -582,26 +645,26 @@ create policy server_settings_access on public.server_settings
 drop policy if exists bot_configs_owner_rw on public.servers;
 drop policy if exists bot_configs_owner_rw on public.bot_configs;
 create policy bot_configs_owner_rw on public.bot_configs
-  for all using (public.owns_guild(guild_id)) with check (public.owns_guild(guild_id));
+  for all using (public.can_access_guild(guild_id)) with check (public.can_access_guild(guild_id));
 
 -- mod_actions: owner read/write, never delete via the dashboard (audit trail)
 drop policy if exists mod_actions_owner_select on public.mod_actions;
 create policy mod_actions_owner_select on public.mod_actions
-  for select using (public.owns_guild(guild_id));
+  for select using (public.can_access_guild(guild_id));
 
 drop policy if exists mod_actions_owner_insert on public.mod_actions;
 create policy mod_actions_owner_insert on public.mod_actions
-  for insert with check (public.owns_guild(guild_id));
+  for insert with check (public.can_access_guild(guild_id));
 
 -- security_events: owner read-only
 drop policy if exists security_events_owner_select on public.security_events;
 create policy security_events_owner_select on public.security_events
-  for select using (public.owns_guild(guild_id));
+  for select using (public.can_access_guild(guild_id));
 
 -- antinuke_whitelist: owner read/write/delete
 drop policy if exists antinuke_whitelist_owner_rw on public.antinuke_whitelist;
 create policy antinuke_whitelist_owner_rw on public.antinuke_whitelist
-  for all using (public.owns_guild(guild_id)) with check (public.owns_guild(guild_id));
+  for all using (public.can_access_guild(guild_id)) with check (public.can_access_guild(guild_id));
 
 -- =============================================================================
 -- Retention: archive mod_actions/security_events older than 90 days.

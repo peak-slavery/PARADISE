@@ -16,9 +16,14 @@ const services = [
   'paradise-cyrene',
 ];
 const ports = [3000, 3101, 3102, 3103, 3104, 3105, 3106, 3107, 3108];
-const timeoutMs = 90_000;
-const pollMs = 1_000;
-const requestTimeoutMs = Math.min(30_000, timeoutMs);
+// The dashboard runs `next dev`, which compiles 24 routes on the first request.
+// Starting it alongside eight bots makes that cold compile slow, so it gets its
+// own budget; bots only need to boot a process and bind a port.
+const dashboardTimeoutMs = 240_000;
+const botTimeoutMs = 120_000;
+const pollMs = 2_000;
+// Keep each attempt short so one slow request cannot consume the whole budget.
+const requestTimeoutMs = 15_000;
 
 function run(args, options = {}) {
   return execFileSync(pm2, args, {
@@ -58,8 +63,8 @@ function cleanup() {
   }
 }
 
-async function waitFor(url) {
-  const deadline = Date.now() + timeoutMs;
+async function waitFor(url, budgetMs) {
+  const deadline = Date.now() + budgetMs;
   let lastError = 'not ready';
   while (Date.now() < deadline) {
     try {
@@ -71,7 +76,7 @@ async function waitFor(url) {
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
-  throw new Error(`${url} did not become ready within ${timeoutMs / 1000}s (${lastError})`);
+  throw new Error(`${url} did not become ready within ${budgetMs / 1000}s (${lastError})`);
 }
 
 const occupied = [...currentNames()].filter((name) => services.includes(name));
@@ -82,8 +87,8 @@ if (occupied.length) {
   let started = true;
 try {
   run(['start', 'ecosystem.config.cjs'], { stdio: 'inherit' });
-  await waitFor('http://127.0.0.1:3000/');
-  for (const port of ports.slice(1)) await waitFor(`http://127.0.0.1:${port}/health`);
+  await waitFor('http://127.0.0.1:3000/', dashboardTimeoutMs);
+  for (const port of ports.slice(1)) await waitFor(`http://127.0.0.1:${port}/health`, botTimeoutMs);
   console.log(JSON.stringify(localServiceSummary(), null, 2));
   console.log('Local PM2 smoke test passed. Services are localhost-only test processes.');
 } catch (error) {

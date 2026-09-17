@@ -182,10 +182,13 @@ mongosh "$MONGODB_URI" infra/mongo/init.js
 ```
 
 Use the schema file only for a fresh database. The Node migration runner records
-completed files in `private.schema_migrations`, validates order, and applies each
-pending migration transactionally. Mark an already-initialized database once with
-`--baseline=0001_baseline.sql`; future migrations then apply without re-running the
-baseline.
+completed files in `private.schema_migrations` and applies each pending migration
+transactionally. It refuses to run unless migration filenames form a contiguous
+`0001`-based sequence, rejects a baseline that is not the first migration, aborts
+if a baseline row already carries a different checksum, and fails if the ledger
+references a migration that no longer exists in source. Mark an
+already-initialized database once with `--baseline=0001_baseline.sql`; future
+migrations then apply without re-running the baseline.
 
 ### Restore drill
 

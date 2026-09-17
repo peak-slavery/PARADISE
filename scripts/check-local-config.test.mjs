@@ -8,7 +8,7 @@ test('mongo readiness reports missing URIs without secrets', async () => {
   console.log = (value) => logs.push(value);
   try {
     assert.equal(await reportMongoReadiness('Primary Mongo', undefined), false);
-    assert.deepEqual(logs, ['Primary Mongo: missing valid mongodb+srv URI']);
+    assert.deepEqual(logs, ['Primary Mongo: missing valid secure MongoDB URI']);
   } finally {
     console.log = originalLog;
   }

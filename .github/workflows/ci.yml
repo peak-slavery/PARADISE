@@ -92,6 +92,32 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # Card registry validation: scanner + manifest + probability contract.
+  # Runs before the dashboard build so a bad card push fails fast and
+  # never reaches the deployment artefact.
+  cards:
+    name: card registry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # Fails on scanner errors, rarity-folder gaps, probability drift,
+      # and any drift between the committed manifest and a fresh scan.
+      - run: npm run cards:check -w @eiflow/bot-luffy
+      # End-to-end card data path: manifest integrity, artwork containment,
+      # the 100,000,000 weight total, Limited Arts at exactly 0.001%, and
+      # agreement between the manifest and the runtime catalog the engine
+      # actually draws from. Mongo parity is skipped here (no database).
+      # LUFFY_SMOKE_REQUIRE_CATALOG makes a missing TS loader a hard failure
+      # rather than a silent skip of the catalog check.
+      - run: npm run smoke:luffy
+        env:
+          LUFFY_SMOKE_REQUIRE_CATALOG: '1'
+
   build-dashboard:
     name: build dashboard
     runs-on: ubuntu-latest

@@ -26,6 +26,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { botServicesWithUrls } from './fleet.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -54,7 +55,12 @@ export const KNOWN_BLOCKERS = {
  *   { mongo: {up: boolean, known: boolean}, redis: {up: boolean, known: boolean} }
  * @returns {{level: 'ok'|'blocked'|'novel'|'down'|'auth-failed', detail: string, novel: boolean}}
  */
-export function classifyBot({ liveOk, liveStatus, authedOk, authedStatus, payload, depSignatures }) {
+export function classifyBot({ liveOk, liveStatus, authedOk, authedStatus, payload, depSignatures, suspended = false }) {
+  // Platform suspension is an operator/billing condition, not a code failure:
+  // the process never ran, so reporting it as novel would misdirect debugging.
+  if (suspended) {
+    return { level: 'blocked', detail: 'service suspended by the platform (billing)', novel: false };
+  }
   if (!liveOk) {
     return { level: 'down', detail: `liveness HTTP ${liveStatus ?? 'unreachable'}`, novel: true };
   }
@@ -94,16 +100,7 @@ export function classifyBot({ liveOk, liveStatus, authedOk, authedStatus, payloa
   };
 }
 
-const SERVICES = [
-  { id: 'shanks', url: 'https://eiflow-shanks.onrender.com', header: 'Shanks' },
-  { id: 'sanji', url: 'https://eiflow-sanji.onrender.com', header: 'Sanji' },
-  { id: 'zoro', url: 'https://eiflow-zoro.onrender.com', header: 'Zoro' },
-  { id: 'boahancock', url: 'https://royal-paradise-v2-4ery.onrender.com', header: 'Boa hancock' },
-  { id: 'nami', url: 'https://eiflow-nami.onrender.com', header: 'Nami' },
-  { id: 'luffy', url: 'https://eiflow-luffy.onrender.com', header: 'Luffy' },
-  { id: 'niko-robin', url: 'https://eiflow-niko-robin.onrender.com', header: 'Niko Robin' },
-  { id: 'cyrene', url: 'https://cyrene-2ukf.onrender.com', header: 'Cyrene' },
-];
+const SERVICES = botServicesWithUrls();
 
 function readCredFile() {
   try {
@@ -122,10 +119,18 @@ async function probeService(url, token) {
   const liveStart = Date.now();
   let liveOk = false;
   let liveStatus = null;
+  let suspended = false;
   try {
     const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(30_000) });
     liveStatus = res.status;
     liveOk = res.ok;
+    // A billing suspension is served by Render's edge as HTML, not by our
+    // process. Without this check it looks like an application failure and
+    // gets reported as NOVEL, sending operators to debug code that never ran.
+    if (res.status === 503) {
+      const body = await res.text().catch(() => '');
+      suspended = /service has been suspended/i.test(body);
+    }
   } catch {
     liveOk = false;
   }
@@ -134,7 +139,7 @@ async function probeService(url, token) {
   let authedOk = false;
   let authedStatus = null;
   let payload = null;
-  if (token) {
+  if (token && !suspended) {
     try {
       const res = await fetch(`${url}/health`, {
         headers: { authorization: `Bearer ${token}` },
@@ -148,9 +153,9 @@ async function probeService(url, token) {
     }
   } else {
     authedOk = false;
-    authedStatus = 'no token';
+    authedStatus = suspended ? 'service suspended' : 'no token';
   }
-  return { liveOk, liveStatus, liveMs, authedOk, authedStatus, payload };
+  return { liveOk, liveStatus, liveMs, suspended, authedOk, authedStatus, payload };
 }
 
 /** Direct dependency probes — run once, shared by every service. */

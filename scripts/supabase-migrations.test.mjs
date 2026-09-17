@@ -24,6 +24,28 @@ test('migration runner is transactional and records a ledger', () => {
   assert.match(runner, /ON_ERROR_STOP=1/);
 });
 
+test('migration runner bootstraps the ledger in one transaction', () => {
+  // The ledger table, its checksum column, and the NOT NULL constraint must be
+  // established together; partial bootstrap could leave migrations skippable.
+  assert.match(runner, /create table if not exists private\.schema_migrations[\s\S]*?alter column checksum set not null;/);
+});
+
+test('migration runner enforces a contiguous migration sequence', () => {
+  assert.match(runner, /Supabase migrations must be contiguous from 0001/);
+});
+
+test('migration runner rejects a baseline that is not the first migration', () => {
+  assert.match(runner, /baseline must be the first migration/);
+});
+
+test('migration runner refuses to overwrite a conflicting baseline checksum', () => {
+  assert.match(runner, /already recorded with a different checksum — refusing to overwrite/);
+});
+
+test('migration runner detects ledger drift from removed migrations', () => {
+  assert.match(runner, /ledger contains unknown migrations/);
+});
+
 test('migration runner records an immutable checksum', () => {
   assert.match(runner, /createHash\('sha256'\)/);
   assert.match(runner, /insert into private\.schema_migrations \(filename, checksum\)/);

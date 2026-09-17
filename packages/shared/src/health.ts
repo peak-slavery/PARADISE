@@ -38,6 +38,7 @@ export interface HealthPayload {
   bot_id: string;
   ram_mb: number;
   redis_commands_today: number;
+  redis_capacity: import('./capacity.js').CapacitySnapshot | null;
   db_write_count_1h: number;
   db_connections: { supabase: boolean; mongo: boolean; redis: boolean };
   queue: { active: number; pending: number; dropped: number };
@@ -94,6 +95,7 @@ export async function buildHealthPayload(deps: HealthDeps): Promise<HealthPayloa
     bot_id: deps.env.botId,
     ram_mb: Math.round((process.memoryUsage().rss / 1024 / 1024) * 10) / 10,
     redis_commands_today: deps.kv.commandsUsed(),
+    redis_capacity: deps.kv.capacity?.() ?? null,
     db_write_count_1h: deps.writes1h(),
     db_connections: { supabase, mongo, redis },
     queue: deps.queue.stats,

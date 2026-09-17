@@ -27,11 +27,13 @@ export function DashboardShell({
   profile,
   servers,
   demo,
+  isMaster,
   children,
 }: {
   profile: UserRow | null;
   servers: ServerRow[];
   demo: boolean;
+  isMaster: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -93,6 +95,7 @@ export function DashboardShell({
               profile={profile}
               servers={servers}
               demo={demo}
+              isMaster={isMaster}
               activeGuildId={activeGuildId}
               pathname={pathname}
               signingOut={signingOut}
@@ -147,6 +150,7 @@ export function DashboardShell({
                     profile={profile}
                     servers={servers}
                     demo={demo}
+                    isMaster={isMaster}
                     activeGuildId={activeGuildId}
                     pathname={pathname}
                     signingOut={signingOut}
@@ -169,6 +173,7 @@ function NavContent({
   profile,
   servers,
   demo,
+  isMaster,
   activeGuildId,
   pathname,
   signingOut,
@@ -178,6 +183,7 @@ function NavContent({
   profile: UserRow | null;
   servers: ServerRow[];
   demo: boolean;
+  isMaster: boolean;
   activeGuildId: string | null;
   pathname: string | null;
   signingOut: boolean;
@@ -200,7 +206,7 @@ function NavContent({
       </Link>
 
       <nav className="flex flex-col gap-1">
-        {profile?.is_master && !demo ? <NavLink href="/dashboard/admin" active={pathname === '/dashboard/admin'} onNavigate={onNavigate} icon={<IconShield size={17} />} label="Master controls" /> : null}
+        {isMaster && !demo ? <NavLink href="/dashboard/admin" active={pathname === '/dashboard/admin'} onNavigate={onNavigate} icon={<IconShield size={17} />} label="Master controls" /> : null}
         <NavLink
           href="/dashboard"
           active={overviewActive}
@@ -216,8 +222,8 @@ function NavContent({
 
         {servers.length === 0 ? (
           <p className="mt-2 rounded-2xl neu-inset px-3 py-3 text-xs leading-relaxed text-ink-muted">
-            No authorized servers yet. Add Ei Point to a Discord guild
-            you own and it will appear here.
+            No servers yet. Add Ei Point to a Discord guild where you are
+            the owner or an administrator and it will appear here.
           </p>
         ) : (
           <div className="mt-1.5 flex flex-col gap-1">

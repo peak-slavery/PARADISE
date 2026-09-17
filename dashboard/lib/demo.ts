@@ -25,6 +25,22 @@ export function productionMode(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
+export function assertDashboardAuthEnvironment(): void {
+  if (!productionMode()) return;
+  if (process.env.DEMO_MODE !== 'false') {
+    throw new Error('DEMO_MODE must be explicitly false in production');
+  }
+  const required = [
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SITE_URL',
+  ];
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (missing.length > 0) {
+    throw new Error(`Missing required production authentication variables: ${missing.join(', ')}`);
+  }
+}
+
 export function assertDashboardProductionEnvironment(): void {
   if (!productionMode()) return;
   if (process.env.DEMO_MODE !== 'false') {
@@ -66,10 +82,12 @@ function present(value: string | undefined): boolean {
  * reload without restarting the type checker or clearing a module cache.
  */
 export function credentials(): CredentialStatus {
+  // OAuth and cookie-backed RLS sessions use only the public Supabase URL and
+  // anon key. The service-role key is deliberately not part of this flag: it
+  // is reserved for trusted internal/admin operations and must not gate login.
   const supabase =
     present(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
-    present(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) &&
-    present(process.env.SUPABASE_SERVICE_ROLE_KEY);
+    present(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   const mongo = present(process.env.MONGODB_URI);
   const hmac = present(process.env.HMAC_SECRET) || present(process.env.HMAC_SECRETS_JSON);
   const demo = process.env.DEMO_MODE === 'true';

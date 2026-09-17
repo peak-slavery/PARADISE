@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { updateSession } from '@/lib/supabase/middleware';
-import { assertDashboardProductionEnvironment } from '@/lib/demo';
+import { assertDashboardAuthEnvironment } from '@/lib/demo';
 
 /**
  * Route gate (Next.js 16 `proxy` convention).
@@ -98,15 +98,26 @@ function isSameOrigin(request: NextRequest): boolean {
   }
 }
 
+/** Preserve any refreshed Supabase cookies when returning an alternate response. */
+function withRefreshedCookies(target: NextResponse, source: NextResponse): NextResponse {
+  for (const cookie of source.cookies.getAll()) {
+    target.cookies.set(cookie);
+  }
+  return target;
+}
+
 export async function proxy(request: NextRequest) {
-  assertDashboardProductionEnvironment();
+  assertDashboardAuthEnvironment();
   const { response, user, configured } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
 
   if (rateLimited(request)) {
-    return NextResponse.json(
-      { error: 'Too many requests. Slow down and try again shortly.' },
-      { status: 429, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' } },
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Too many requests. Slow down and try again shortly.' },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' } },
+      ),
+      response,
     );
   }
 
@@ -115,9 +126,12 @@ export async function proxy(request: NextRequest) {
     hasSessionCookie(request) &&
     !isSameOrigin(request)
   ) {
-    return NextResponse.json(
-      { error: 'Cross-origin request rejected' },
-      { status: 403, headers: { 'Cache-Control': 'no-store' } },
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Cross-origin request rejected' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } },
+      ),
+      response,
     );
   }
 
@@ -128,9 +142,12 @@ export async function proxy(request: NextRequest) {
 
   if (!configured && !isInternalEndpoint) {
     if (process.env.DEMO_MODE !== 'true') {
-      return NextResponse.json(
-        { error: 'Dashboard authentication is not configured' },
-        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      return withRefreshedCookies(
+        NextResponse.json(
+          { error: 'Dashboard authentication is not configured' },
+          { status: 503, headers: { 'Cache-Control': 'no-store' } },
+        ),
+        response,
       );
     }
     return response;

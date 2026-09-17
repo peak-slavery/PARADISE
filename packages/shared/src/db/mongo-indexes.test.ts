@@ -34,7 +34,11 @@ describe('Mongo index contract', () => {
     const bootstrap = readFileSync(new URL('../../../../infra/mongo/init.js', import.meta.url), 'utf8');
 
     expect(bootstrap).toContain("require('./indexes.cjs')");
+    expect(bootstrap).toContain('const database = db.getSiblingDB(DB_NAME)');
     expect(bootstrap).toContain('for (const index of indexes)');
+    expect(bootstrap).toContain('database[index.collection].createIndex');
+    expect(bootstrap).toContain('database.runCommand');
+    expect(bootstrap).not.toContain('const db = db.getSiblingDB');
     expect(bootstrap).not.toContain('db.logs.createIndex');
     expect(bootstrap).not.toContain('db.ai_context.createIndex');
   });

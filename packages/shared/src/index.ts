@@ -18,6 +18,7 @@ export * from './env.js';
 export * from './logger.js';
 export * from './errors.js';
 export * from './redis.js';
+export * from './capacity.js';
 export * from './db/supabase.js';
 export * from './db/mongo.js';
 export * from './log-sink.js';

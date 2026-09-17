@@ -32,10 +32,33 @@ export async function getServers(): Promise<ServersResult> {
     .order('name', { ascending: true });
 
   if (error || !data) {
+    // RLS already scopes the result to guilds the caller can access via the
+    // trusted relationship table (owner/administrator/inviter) or master status.
     return { servers: [], demo: false };
   }
 
-  return { servers: data as ServerRow[], demo: false };
+  // Keep the navigation and overview aligned with the same server-authorized
+  // contract enforced by guild routes. RLS scopes the caller; this flag scopes
+  // the bot's own registration state.
+  const servers = (data as ServerRow[]).filter((server) => server.authorized);
+  return { servers, demo: false };
+}
+
+/**
+ * Master status comes from the database-backed `is_master_user()` predicate,
+ * never from client-supplied profile metadata. Returns false when unconfigured
+ * or on any error so the master panel is hidden rather than leaked.
+ */
+export async function getMasterStatus(): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return false;
+  try {
+    const { data, error } = await supabase.rpc('is_master_user');
+    if (error || typeof data !== 'boolean') return false;
+    return data;
+  } catch {
+    return false;
+  }
 }
 
 /** Single guild, or `null` when RLS hides it (or it doesn't exist). */

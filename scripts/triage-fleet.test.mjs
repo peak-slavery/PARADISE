@@ -91,6 +91,48 @@ test('missing or rejected auth token classifies auth-failed and novel', () => {
   assert.match(verdict.detail, /no token/);
 });
 
+test('a platform-suspended service is blocked, never novel', () => {
+  // Render serves a suspension page instead of reaching our process. This must
+  // not be reported as an application failure, or operators will debug code
+  // that never ran.
+  const verdict = classifyBot({
+    liveOk: false,
+    liveStatus: 503,
+    suspended: true,
+    authedOk: false,
+    authedStatus: 'service suspended',
+    payload: null,
+    depSignatures: { mongo: { up: false, known: true }, redis: { up: false, known: true } },
+  });
+  assert.equal(verdict.level, 'blocked');
+  assert.equal(verdict.novel, false);
+  assert.match(verdict.detail, /suspended/);
+});
+
+test('suspension classification takes precedence over the down verdict', () => {
+  const suspended = classifyBot({
+    liveOk: false,
+    liveStatus: 503,
+    suspended: true,
+    authedOk: false,
+    authedStatus: null,
+    payload: null,
+    depSignatures: { mongo: { up: false, known: true }, redis: { up: false, known: true } },
+  });
+  const notSuspended = classifyBot({
+    liveOk: false,
+    liveStatus: 503,
+    suspended: false,
+    authedOk: false,
+    authedStatus: null,
+    payload: null,
+    depSignatures: { mongo: { up: false, known: true }, redis: { up: false, known: true } },
+  });
+  assert.equal(suspended.level, 'blocked');
+  assert.equal(notSuspended.level, 'down');
+  assert.equal(notSuspended.novel, true);
+});
+
 test('known-blocker signature matchers recognize the production error strings', () => {
   assert.ok(
     KNOWN_BLOCKERS.atlas.test(

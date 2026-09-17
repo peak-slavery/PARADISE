@@ -74,12 +74,168 @@ export interface AiContextDoc {
   updated_at: Date;
 }
 
+/* ------------------------------------------------------------------ */
+/* Luffy collectible card economy (co-exists with the poker game).   */
+/* ------------------------------------------------------------------ */
+
+export type CardRank =
+  | 'common'
+  | 'rare'
+  | 'elite'
+  | 'gold'
+  | 'ex'
+  | 'exx'
+  | 's'
+  | 'ss'
+  | 'sss_plus'
+  | 'diamond'
+  | 'limited_arts';
+
+export type CardStatus = 'active' | 'locked_trade' | 'sold' | 'revoked';
+
+export interface CardDefinitionDoc {
+  /** Stable definition id, e.g. `pirates.straw.captain`. */
+  definition_id: string;
+  character: string;
+  title: string;
+  series: string;
+  category: 'captain' | 'pirate' | 'marine' | 'warlord' | 'yonko' | 'admiral' | 'legend' | 'event';
+  rank: CardRank;
+  artwork_url: string | null;
+  description: string;
+  base_value: number;
+  min_value: number;
+  max_value: number;
+  is_event_only: boolean;
+  is_tradeable: boolean;
+  is_sellable: boolean;
+  /** Optional hard supply cap. 0 / undefined = uncapped. */
+  total_supply: number;
+  /** Filesystem registry state; disabled definitions remain renderable for owned instances. */
+  enabled?: boolean;
+  content_hash?: string | null;
+  archived_at?: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CardInstanceDoc {
+  /** Globally unique instance id, e.g. `c_inst_1f9c...`. */
+  instance_id: string;
+  definition_id: string;
+  owner_user_id: string;
+  owner_guild_id: string;
+  acquired_at: Date;
+  source: 'pack_open' | 'event' | 'admin_issued' | 'sold_payout' | 'trade';
+  /** 1-indexed serial within a single `release_event` window. */
+  serial_number: number | null;
+  release_event: string | null;
+  status: CardStatus;
+  /** Per-instance lock taken by an in-flight trade; cleared on completion/cancel. */
+  lock_token: string | null;
+  /** Monotonic version used by compare-and-swap transitions. */
+  version: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CardPackDoc {
+  pack_id: string;
+  display_name: string;
+  description: string;
+  /** Berries cost; integer >= 0 (event-only packs may be free). */
+  price: number;
+  card_count: number;
+  /** Allowed ranks for this pack (weighted selection is filtered to these). */
+  allowed_ranks: readonly CardRank[];
+  /** Allow the Limited Arts pool to participate in the weighted pick. */
+  allow_limited_arts: boolean;
+  active: boolean;
+  release_starts_at: Date | null;
+  release_ends_at: Date | null;
+  artwork_url: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CardPlayerCurrencyDoc {
+  guild_id: string;
+  user_id: string;
+  balance: number;
+  lifetime_earned: number;
+  lifetime_spent: number;
+  updated_at: Date;
+}
+
+export type CardTradeStatus = 'pending' | 'accepted' | 'cancelled' | 'expired' | 'declined';
+
+export interface CardTradeDoc {
+  trade_id: string;
+  guild_id: string;
+  initiator_id: string;
+  recipient_id: string;
+  /** Card instance ids the initiator is offering. */
+  offered_instance_ids: string[];
+  /** Card instance ids the initiator is requesting from the recipient. */
+  requested_instance_ids: string[];
+  offered_berries: number;
+  requested_berries: number;
+  status: CardTradeStatus;
+  expires_at: Date;
+  created_at: Date;
+  accepted_at: Date | null;
+  cancelled_at: Date | null;
+  /** Monotonic version used by compare-and-swap transitions. */
+  version: number;
+}
+
+export interface CardAcquisitionDoc {
+  acquisition_id: string;
+  guild_id: string;
+  user_id: string;
+  instance_id: string;
+  definition_id: string;
+  pack_id: string | null;
+  source: 'pack_open' | 'event' | 'admin_issued' | 'sold_payout' | 'trade';
+  base_value: number;
+  /** Berries credited/debited for this acquisition; can be zero. */
+  berries_delta: number;
+  acquired_at: Date;
+}
+
+export interface CardTransactionDoc {
+  txn_id: string;
+  guild_id: string;
+  user_id: string;
+  /** Signed delta. Positive = credit, negative = debit. */
+  delta: number;
+  balance_after: number;
+  reason:
+    | 'pack_purchase'
+    | 'card_sale'
+    | 'trade_offer'
+    | 'trade_receive'
+    | 'admin_credit'
+    | 'admin_debit'
+    | 'daily_reward'
+    | 'event_reward';
+  reference_id: string | null;
+  created_at: Date;
+}
+
 export interface MongoCollections {
   logs: Collection<LogDoc>;
   xp: Collection<XpDoc>;
   card_games: Collection<CardGameDoc>;
   inventories: Collection<InventoryDoc>;
   ai_context: Collection<AiContextDoc>;
+  card_definitions: Collection<CardDefinitionDoc>;
+  card_instances: Collection<CardInstanceDoc>;
+  card_packs: Collection<CardPackDoc>;
+  card_player_currency: Collection<CardPlayerCurrencyDoc>;
+  card_trades: Collection<CardTradeDoc>;
+  card_acquisitions: Collection<CardAcquisitionDoc>;
+  card_transactions: Collection<CardTransactionDoc>;
 }
 
 export interface MongoHandle {
@@ -117,6 +273,13 @@ export function buildCollections(db: Db): MongoCollections {
     card_games: db.collection<CardGameDoc>('card_games'),
     inventories: db.collection<InventoryDoc>('inventories'),
     ai_context: db.collection<AiContextDoc>('ai_context'),
+    card_definitions: db.collection<CardDefinitionDoc>('card_definitions'),
+    card_instances: db.collection<CardInstanceDoc>('card_instances'),
+    card_packs: db.collection<CardPackDoc>('card_packs'),
+    card_player_currency: db.collection<CardPlayerCurrencyDoc>('card_player_currency'),
+    card_trades: db.collection<CardTradeDoc>('card_trades'),
+    card_acquisitions: db.collection<CardAcquisitionDoc>('card_acquisitions'),
+    card_transactions: db.collection<CardTransactionDoc>('card_transactions'),
   };
 }
 

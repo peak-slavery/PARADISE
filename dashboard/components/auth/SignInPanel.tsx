@@ -36,18 +36,18 @@ export function SignInPanel({
     setMessage(null);
 
     try {
-    const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        scopes: 'identify email',
+        scopes: 'identify email guilds',
       },
-    });
+      });
 
-    if (error) {
-      setPhase('error');
-      setMessage('Discord sign-in could not start. Check that Discord is enabled in Supabase Authentication and the callback URL is allowed.');
-    }
+      if (error) {
+        setPhase('error');
+        setMessage('Discord sign-in could not start. Check that Discord is enabled in Supabase Authentication and the callback URL is allowed.');
+      }
     } catch {
       setPhase('error');
       setMessage('The authentication service could not be reached. Please try again.');
@@ -89,7 +89,8 @@ export function SignInPanel({
         <button
           type="button"
           onClick={signInWithDiscord}
-           disabled={!configured || phase === 'redirecting'}
+          disabled={!configured || phase === 'redirecting'}
+          aria-busy={phase === 'redirecting'}
           className="btn-neu-primary mt-7 w-full px-5 py-3 text-base disabled:cursor-wait disabled:opacity-80"
         >
           {phase === 'redirecting' ? (
@@ -133,8 +134,8 @@ export function SignInPanel({
         ) : null}
 
         <p className="mt-6 text-xs leading-relaxed text-ink-faint">
-          By signing in you’ll see every guild you own that Ei Point is
-          authorized for.
+          By signing in you’ll see every authorized Ei Point guild where you
+          are verified as the owner or an administrator.
         </p>
       </div>
 

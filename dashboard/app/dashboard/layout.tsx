@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 import { DashboardShell } from '@/components/dashboard/DashboardShell';
-import { getProfile, getServers } from '@/lib/data/servers';
+import { getMasterStatus, getProfile, getServers } from '@/lib/data/servers';
 
 export const metadata: Metadata = {
   title: 'Servers',
@@ -16,9 +16,10 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [{ servers, demo }, profile] = await Promise.all([
+  const [{ servers, demo }, profile, master] = await Promise.all([
     getServers(),
     getProfile(),
+    getMasterStatus(),
   ]);
 
   return (
@@ -26,6 +27,7 @@ export default async function DashboardLayout({
       profile={profile?.user ?? null}
       servers={servers}
       demo={demo || profile?.demo === true}
+      isMaster={master}
     >
       {children}
     </DashboardShell>

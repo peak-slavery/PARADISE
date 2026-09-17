@@ -1,11 +1,27 @@
 # Paradise Engine — Session Handoff / Memory
 
 > Purpose: persistent context record so any agent/model session can resume
-> exactly where the previous session left off. Last updated: **2026-09-15,
-> seventh pass — daily fleet verification + triage tooling** (all 8 bots live,
-> ring active, 0 novel failures, new `npm run triage:fleet` command).
-> This file contains **no secrets**. Credentials live in gitignored
+> exactly where the previous session left off. Last updated: **2026-09-17 —
+> AI provider resilience implemented** (see §4.6; the "all 8 bots live"
+> statements below are historical and no longer true — the fleet is suspended
+> by billing). This file contains **no secrets**. Credentials live in gitignored
 > `temp cred.txt` only.
+
+## Release checkpoint — 2026-09-17
+
+The operator authorized pushing the accumulated changes. Release branch:
+`release/cards-resilience-hardening` on `ei-point`; do not merge into production
+`main` until the release review findings are resolved. Local lint, workspace
+typechecks/tests, dashboard build, cards:check, 32 deployment checks, and audit
+passed. Luffy smoke passed 9 local checks; live Mongo parity was skipped.
+Cryptographic random defaults are now wired into the card engine and rarity selector.
+
+Static review found a conflicting Mongo `$set`/`$inc` on `version` in the offered
+card transfer, plus concerns about expired-trade refunds/unlocks, relative artwork
+URLs passed to embeds after debit, and unrestricted access to the free premium
+pack. These are not live-reproduced; green mock tests do not establish safety.
+Admin resync is absent and the image-provider endpoint remains unconfigured.
+Render billing suspension and paused Atlas clusters remain production blockers.
 
 ## 1. Project overview
 
@@ -14,7 +30,7 @@ Paradise Engine ("eiflow" / "EI-point") = 1 Next.js dashboard + 8 Discord bots.
 | Piece | Where | Notes |
 |---|---|---|
 | Dashboard | `dashboard/` (Next.js 16, port 3000) | Deployed on **Vercel**, project `ei-point-dashboard`, team `kazutoz02s-projects`, plan hobby. Discord login LIVE |
-| 8 bots (shanks, sanji, zoro, boahancock, nami, luffy, niko-robin, cyrene) | `bots/*` (discord.js 14, tsx) | **ALL LIVE on Render free tier** (restored 2026-09-14 after env wipe; keep-alive ring active). Locally via PM2 (`ecosystem.config.cjs`, ports 3101–3108) |
+| 8 bots (shanks, sanji, zoro, boahancock, nami, luffy, niko-robin, cyrene) | `bots/*` (discord.js 14, tsx) | ⚠️ **ALL 8 SUSPENDED BY BILLING as of 2026-09-16T12:05Z** — Render serves its 503 suspension page; `suspenders: ["billing"]`, API resume refused. Was ALL LIVE on Render free tier (restored 2026-09-14 after env wipe; keep-alive ring active). Locally via PM2 (`ecosystem.config.cjs`, ports 3101–3108) |
 | Shared packages | `packages/shared`, `packages/secret-policy` | Source-only workspaces (`@eiflow/shared`, `@eiflow/secret-policy`) |
 | Ops scripts | `scripts/*.mjs` | 26 scripts; 6 `*.test.mjs` run by `npm test`; `check-deploy.mjs` is the deploy gate (31 checks) |
 | Infra | `infra/` (supabase migrations, mongo, cron) | Supabase schema loaded and verified (12 tables) |
@@ -137,6 +153,27 @@ merge, PUT the complete set.**
   `scripts/.cmd-audit.mjs` (predates this, harmless).
 
 ### 4.1 Blockers that need the USER (outside any agent's reach)
+
+0. **P0 — Render fleet SUSPENDED BY BILLING (discovered 2026-09-16).**
+   All 8 services report `suspended: "suspended"`, `suspenders: ["billing"]`,
+   `plan: free`, `updatedAt` 2026-09-16T12:05:50–52Z (suspended within ~2s of
+   each other). Every bot URL returns HTTP 503 with Render's
+   `This service has been suspended by its owner.` HTML page, so the bot
+   processes are not reachable. Sources: `GET /v1/services` (all 8),
+   `GET /v1/services/{id}` (`suspenders:["billing"]`), live `/health` probes.
+   - NOT a free-tier spin-down, NOT a deploy failure, NOT a code error: last
+     successful deploy was 2026-09-14T20:02Z and service logs show normal
+     operation (only the known `MongoServerSelectionError`) until
+     2026-09-16T12:01Z, then suspension at 12:05Z.
+   - `POST /v1/services/{id}/resume` → HTTP 400
+     `{"message":"only services suspended by a user can be resumed"}`.
+     A billing suspension cannot be cleared by any available credential.
+   - **Fix (operator)**: Render dashboard → Billing for `Kazuto's Workspace`
+     (`tea-csp5vkrgbbvc73fq1j5g`) → resolve the balance/plan issue, then resume
+     the services (or trigger fresh deploys).
+   - Until this clears, NO runtime verification is possible: health probes,
+     in-guild Discord tests, and the Luffy smoke test all require the fleet.
+     This supersedes items 1–2 below in ordering.
 
 1. **MongoDB Atlas clusters are paused — health check `mongo:false`.**
    Both `eiflow.onrjgir.mongodb.net` (primary) and `eipointsecurity.sutarwt.mongodb.net`
@@ -337,7 +374,94 @@ security hardening. All code shipped in `989291d` + `89658cf` + `a1b6f95`
   `.configure-ring.mjs` + restore/verification helpers). Remaining untracked:
   `scripts/.cmd-audit.mjs` (predates this work, harmless).
 
-### 4.6 DONE this session (2026-09-15, seventh pass — verification + triage)
+### 4.6 DONE this session (2026-09-17, eleventh pass — AI provider resilience)
+
+- The routing audit found 6 of 11 required AI capabilities missing in cyrene:
+  provider rate limits, quotas, retries, circuit breakers, provider health,
+  capacity tracking. `completeWithFallback` made exactly ONE attempt per
+  provider and retried broken providers in full on every request.
+- **New `bots/cyrene/src/lib/resilience.ts`** (pure, injectable time, fully
+  tested): circuit breaker (closed→open→half-open; opens on consecutive-
+  failure threshold or immediately on 429/permanent), provider cooldown
+  (parks a provider, admits exactly one probe per window), bounded retries with
+  exponential backoff + jitter capped under the request timeout (abort-aware),
+  failure classification from HTTP status, `ProviderHealthRegistry`, and
+  `DailyRequestBudget` feeding the shared capacity bands via
+  `decideCapacity(snapshot, 'optional')`.
+- **Wired**: `completeWithFallback` consults the breaker, retries transient
+  failures, records success/failure, and skips parked providers; `/model` shows
+  live breaker state + counters; `runCompletion` gates on capacity admission
+  and counts issued requests.
+- **37 new tests** (29 resilience + 8 router integration), proven against wired
+  behavior. Cyrene suite: 48 tests (was 11).
+- Gates: lint clean, typecheck 0 errors, root 44, shared 81, cyrene 48, luffy
+  79, dashboard 32, audit 0, `check:deploy` 32/32, `smoke:luffy` 9/9,
+  `git diff --check` clean.
+
+### 4.7 DONE this session (2026-09-16, tenth pass — restore integrity + card smoke)
+
+- **Fixed a silent-corruption gap in `scripts/restore-drill.mjs`**: it verified
+  only document COUNT, so a truncated/corrupted restore was reported as
+  `restore drill passed`. Now verifies field-level parity via an exported
+  `verifyRestoreParity()` (excludes `_id`, dropped on insert, and `restored_at`,
+  added by the drill). 8 regression tests; corrupted/truncated/injected cases
+  fail as intended. Drill body is behind a main guard so tests import it
+  without credentials or a live cluster.
+- **Added `scripts/luffy-smoke.mjs`** (`npm run smoke:luffy`): end-to-end card
+  data path — manifest loads, IDs unique, artwork refs contained (no traversal,
+  no absolute paths), `sha256:` hashes present, weights total 100,000,000,
+  Limited Arts exactly 0.001%, runtime catalog loads the manifest and contains
+  every enabled definition, and (with `MONGODB_URI`) every enabled manifest card
+  exists in Mongo `card_definitions` and none is disabled.
+  Three-way exit codes: 0 verified / 1 real defect / 2 unverifiable.
+  Verified non-vacuous: injected `../../etc/passwd` artwork ref → exit 1;
+  unreachable Mongo URI → exit 2; restored → 9/9 pass.
+- **Wired into CI** (`cards` job after the scanner gate) and enforced by
+  `check:deploy` so neither step can be silently dropped. Verified the
+  assertion fires by removing the CI step (gate failed), then restoring it.
+- Gates: lint clean, typecheck 0 errors, root **44** tests, shared **81**,
+  Luffy **79**, npm audit 0 vulns, `check:deploy` **32/32**, `smoke:luffy` 9/9,
+  card scanner 18 cards / 11 folders, `git diff --check` clean.
+
+### 4.8 DONE this session (2026-09-16, ninth pass — fleet suspension + local verification)
+
+- **P0 discovered: all 8 Render services are suspended by billing.** Render API
+  reports `suspended: "suspended"`, `suspenders: ["billing"]`, `plan: free`,
+  `updatedAt` 2026-09-16T12:05:50–52Z. Every bot URL serves Render's
+  `This service has been suspended by its owner.` 503 page. NOT a spin-down, NOT
+  a deploy failure: last deploy 2026-09-14T20:02Z, logs normal until 12:01Z.
+  Both recovery APIs are closed — `POST /resume` → 400
+  `only services suspended by a user can be resumed`; `POST /deploys` → 400
+  `cannot deploy suspended service`. Owner-only fix (Render → Billing).
+- **Atlas resume re-confirmed impossible**: `al-` keys → 401 against
+  `cloud.mongodb.com/api/atlas/v2/groups` (digest + Bearer); no org/admin key in
+  `temp cred.txt`. Cluster pause re-verified by TLS probing the SRV-discovered
+  shard endpoints on 27017 → alert 80 (4/4), while control hosts complete TLS.
+- **Local runtime verification (substitute for the suspended fleet)** via
+  `npm run test:local`: all 9 services `online`, 0 restarts; all 8 bots
+  `/health` HTTP 200; dashboard HTTP 200. Authenticated readiness on 3101 →
+  HTTP 503 `{"status":"degraded", db_connections:{supabase:true, mongo:false,
+  redis:false}}` plus a live `redis_capacity` object (quota 8000, usage 68,
+  band `normal`). 0 substantive error lines across all 8 bot error logs; only
+  the two known external errors appear. Luffy logged `bot ready` and
+  `card registry sync skipped because primary Mongo is unavailable`.
+- **Fixed `scripts/test-local-stack.mjs`** (real bug): it waited 90s for the
+  dashboard with a 30s per-request timeout, but the dashboard runs `next dev`
+  and compiles 24 routes on first request alongside 8 booting bots. One slow
+  request consumed the budget and the harness failed spuriously even though
+  everything was healthy. Now: dashboard 240s, bots 120s, per-request 15s.
+  `npm run test:local` passes with exit 0 and 0 leftover PM2 processes.
+- **Strengthened `packages/shared/src/db/supabase-rls.test.ts`** from
+  policy-name string matching to real security assertions (no browser writes to
+  `guild_access`, self-scoped read only, `revoked_at is null` required, master
+  predicate retained, no destructive SQL, upsert-idempotent backfill). Proved
+  non-vacuous by injecting a `for all using (true)` policy → suite failed →
+  restored the file → suite passed. Shared suite is now **81 tests**.
+- Gates: lint clean, typecheck 0 errors, root 36 tests, shared 81, Luffy 79,
+  dashboard green, `npm audit` 0 vulns, `check:deploy` 31/31, `git diff --check`
+  clean. No commit/push/deploy/production mutation.
+
+### 4.9 DONE this session (2026-09-15, seventh pass — verification + triage)
 
 Daily follow-up on the restored fleet. **Result: 0 novel failures anywhere.**
 
@@ -362,15 +486,19 @@ Daily follow-up on the restored fleet. **Result: 0 novel failures anywhere.**
   (the chat-pasted one is burned/not recorded by policy; team tokens also
   403 on API self-delete per fifth-pass attempt). Deletion stays a user-side
   UI action (§4.1 item 3).
-- **NEW: fleet triage tool** — `scripts/triage-fleet.mjs` (+ `triage-fleet.test.mjs`,
-  8 tests, wired into `npm test` root suite + `npm run triage:fleet`).
+- **Fleet triage tool** — `scripts/triage-fleet.mjs` (+ `triage-fleet.test.mjs`,
+  10 tests, wired into `npm test` root suite + `npm run triage:fleet`).
   Separates liveness vs readiness vs KNOWN external blockers vs NOVEL
   failures. Direct-probes Mongo (TLS alert 80 = atlas-pause signature) and
   Upstash (max-requests = quota signature) once, then classifies each bot:
   ok / blocked / novel / down / auth-failed. Exit 0 = healthy or known
   blockers; exit 1 = novel. supabase:false is ALWAYS novel (system of
-  record, no known blocker). Current live output: 8× BLOCKED
-  (mongo:atlas-pause, redis:upstash-quota), 0 novel.
+  record, no known blocker).
+  **Updated 2026-09-16**: Render's billing-suspension page (HTTP 503 HTML
+  `This service has been suspended by its owner.`) is detected and classified
+  as `blocked`, not as a NOVEL application failure. Previously it was reported
+  as novel, which misleadingly pointed operators at code that never ran.
+  Current live output: 8× BLOCKED (billing suspension), 0 novel, exit 0.
 - **Main-server invite links** (bots are in the dev server ONLY — main guild
   returned 403 Missing Access because they were never invited). Guild-scoped
   one-click links, permissions right-sized per bot's commands:
@@ -438,20 +566,41 @@ curl -s -H "Authorization: Bearer <DASHBOARD_HEALTH_TOKEN>" https://ei-point-das
 # One-shot fleet triage (liveness vs readiness vs known blockers vs NOVEL):
 npm run triage:fleet            # exit 0 = healthy or known blockers; 1 = novel
 
+# Local runtime verification (substitute while Render is suspended):
+# boots dashboard + all 8 bots under PM2, probes real health endpoints,
+# then always deletes its own services. Verify `pm2 status` is empty after.
+npm run test:local
+
+# Luffy card data path (manifest → catalog → Mongo parity when reachable):
+npm run smoke:luffy
+# exit 0 = fully verified, 1 = real defect, 2 = unverifiable (Mongo unreachable)
+
 # Discord login flow (302 = working; provider must be discord:true):
 curl -s -o /dev/null -w "%{http_code}" "$SUPABASE_URL/auth/v1/authorize?provider=discord&redirect_to=https://ei-point-dashboard.vercel.app/auth/callback" -H "apikey: $ANON_KEY"
 # (do NOT use /auth/v1/oauth/discord — always 404 feature_disabled, wrong endpoint)
 
 gh run list --repo xyanncat/EI-point --limit 3
 ```
-Expected once Atlas resumed + Upstash quota resets: health returns
+Expected once the Render suspension is cleared AND Atlas is resumed AND the
+Upstash quota resets: health returns
 `{"status":"ok","db_connections":{"supabase":true,"mongo":true,"redis":true}}`.
-Current state (2026-09-15 seventh pass): all 8 bots + dashboard alive; every
-detailed health = supabase:true, mongo:false (paused Atlas), redis:false
-(Upstash monthly quota 500000/500000). Unauthenticated bot `/health` 200
-`{"status":"degraded"}` is normal (liveness surface); 503 detailed is
-authenticated-only. Verify command doubles are gone in the Discord client
-(API-verified: global=public-only, dev guild=authorize only, overlap NONE).
+
+Current state (**2026-09-16**): the bot fleet is **offline — all 8 services
+suspended by billing**. Every bot URL returns Render's HTTP 503 suspension page
+(HTML, `This service has been suspended by its owner.`), so there is no bot
+liveness or readiness signal at all. Dashboard (Vercel) state is unchanged.
+`npm run triage:fleet` reports 8× blocked (billing suspension), 0 novel, exit 0;
+`npm run check:local` reports both Mongo clusters unavailable with Supabase
+Discord OAuth enabled. Resolve the Render billing issue first — nothing
+else can be verified while the fleet is down.
+
+Once services are running again, the expected degraded (not healthy) state
+until Atlas + Upstash are also fixed is: every detailed health =
+supabase:true, mongo:false (paused Atlas), redis:false (Upstash quota).
+Unauthenticated bot `/health` 200 `{"status":"degraded"}` is normal (liveness
+surface); 503 detailed is authenticated-only. Verify command doubles are gone
+in the Discord client (API-verified: global=public-only, dev guild=authorize
+only, overlap NONE).
 
 ## 7. Vercel API quirks learned (save yourself hours)
 
