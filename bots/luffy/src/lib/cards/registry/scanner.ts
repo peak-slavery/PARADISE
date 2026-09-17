@@ -393,6 +393,11 @@ export function scanCards(rootDir: string): ScanResult {
     errors.push({ code: 'empty_root', message: 'card root is empty', path: rootReal });
   }
 
+  // Dotfiles (e.g. the `.gitkeep` that lets git track a still-empty rarity
+  // folder) are repository plumbing, not card content — skip them entirely so
+  // they neither register as artwork nor trip extension validation.
+  entries = entries.filter((e) => !e.name.startsWith('.'));
+
   // Track first-seen id → path to detect duplicates deterministically.
   const idsByKey = new Map<string, string>();
   const contentByHash = new Map<string, string>();
@@ -448,7 +453,9 @@ export function scanCards(rootDir: string): ScanResult {
     }
 
     // Sort entries by filename (with extension) for deterministic ordering.
-    const sorted = folderEntries.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = folderEntries
+      .filter((entry) => !entry.name.startsWith('.'))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     // Two-pass walk: artwork files first, metadata sidecars second. This
     // avoids false "orphan metadata" warnings caused by alphabetical order

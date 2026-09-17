@@ -1,2 +1,4 @@
 # Store LF in the repository; check out the platform-native ending.
 * text=auto
+# Generated manifest must stay byte-stable across platforms (CI compares it byte-for-byte).
+generated/cards.manifest.json text eol=lf

@@ -153,6 +153,16 @@ describe('scanCards', () => {
     expect(result.errors[0]!.code).toBe('unsupported_extension');
   });
 
+  it('ignores dotfiles so gitkeep can track empty rarity folders', () => {
+    makeCardRoot();
+    write('Gold', '.gitkeep', Buffer.from(''));
+
+    const result = scanCards(tmpRoot);
+    expect(result.errors).toHaveLength(0);
+    expect(result.cards).toHaveLength(0);
+    expect(result.folders).toContain('Gold');
+  });
+
   it('rejects files above the size cap', () => {
     makeCardRoot();
     write('Common', 'huge.png', Buffer.concat([PNG_SIG, Buffer.alloc(MAX_ARTWORK_BYTES)]));
