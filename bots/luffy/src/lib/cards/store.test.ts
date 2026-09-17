@@ -438,6 +438,38 @@ describe('trades', () => {
     await expect(acceptTrade(otherCtx, trade.trade_id, found!.version)).rejects.toBeInstanceOf(UserError);
   });
 
+  it('transfers offered cards without conflicting version updates', async () => {
+    const ctx = makeCtx({ userId: 'u1' });
+    const recipient = makeCtx({ userId: 'u2' });
+    const instance: CardInstanceDoc = {
+      instance_id: 'offered_card', definition_id: 'captain.buggy',
+      owner_user_id: 'u1', owner_guild_id: 'g1', acquired_at: new Date(),
+      source: 'pack_open', serial_number: null, release_event: null,
+      status: 'active', lock_token: null, version: 7,
+      created_at: new Date(), updated_at: new Date(),
+    };
+    mongoStore.card_instances.documents.set(instance.instance_id, instance);
+    const trade = await createTrade(ctx, { instance_ids: [instance.instance_id], berries: 0 }, { instance_ids: [], berries: 0 }, 'u2', 60_000);
+    const versionBeforeTransfer = instance.version;
+    const updateMany = mongoStore.card_instances.updateMany.bind(mongoStore.card_instances);
+    vi.spyOn(mongoStore.card_instances, 'updateMany').mockImplementation((filter, update) => {
+      const set = update.$set as Record<string, unknown> | undefined;
+      const inc = update.$inc as Record<string, unknown> | undefined;
+      for (const field of Object.keys(inc ?? {})) {
+        expect(set).not.toHaveProperty(field);
+      }
+      return updateMany(filter, update);
+    });
+
+    const result = await acceptTrade(recipient, trade.trade_id, trade.version);
+
+    expect(result.initiatorInstances).toHaveLength(1);
+    expect(result.initiatorInstances[0]).toMatchObject({
+      owner_user_id: 'u2', status: 'active', lock_token: null,
+      version: versionBeforeTransfer + 1,
+    });
+  });
+
   it('transfers currency atomically on accept', async () => {
     const ctx = makeCtx({ userId: 'u1' });
     const otherCtx = makeCtx({ userId: 'u2' });

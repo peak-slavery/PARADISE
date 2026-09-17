@@ -610,7 +610,6 @@ export async function acceptTrade(
             owner_user_id: accept.recipient_id,
             status: 'active',
             lock_token: null,
-            version: 1,
             updated_at: now(),
           },
           $inc: { version: 1 },
