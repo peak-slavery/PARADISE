@@ -1,4 +1,5 @@
-import { randomUUID, createHmac } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { signRequestWithContext } from './hmac.js';
 import {
   getRuntimeSecretMappings,
   isBotId,
@@ -9,10 +10,6 @@ type VaultCacheEntry = { value: string; expiresAt: number };
 const cache = new Map<string, VaultCacheEntry>();
 const CACHE_TTL_MS = 5 * 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
-
-function sign(secret: string, timestamp: string, body: string): string {
-  return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
-}
 
 export async function loadVaultSecret(name: string): Promise<string | null> {
   const cached = cache.get(name);
@@ -28,16 +25,28 @@ export async function loadVaultSecret(name: string): Promise<string | null> {
   } catch {
     return null;
   }
-  const body = JSON.stringify({ request_id: randomUUID().replace(/-/g, ''), bot_id: botId });
+  const requestId = randomUUID().replace(/-/g, '');
+  const route = `/api/internal/secret/${encodeURIComponent(name)}`;
+  const body = JSON.stringify({ request_id: requestId, bot_id: botId });
   const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = signRequestWithContext(hmacSecret, body, {
+    method: 'POST',
+    route,
+    botId,
+    requestId,
+    guildId: null,
+  });
   try {
-    const response = await fetch(`${dashboardUrl.origin}/api/internal/secret/${encodeURIComponent(name)}`, {
+    const response = await fetch(`${dashboardUrl.origin}${route}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'x-pe-method': 'POST',
+        'x-pe-route': route,
         'x-pe-bot-id': botId,
+        'x-pe-request-id': requestId,
         'x-pe-timestamp': timestamp,
-        'x-pe-signature': sign(hmacSecret, timestamp, body),
+        'x-pe-signature': signature,
       },
       body,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

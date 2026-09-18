@@ -16,10 +16,14 @@ const contract = createRequire(import.meta.url)('../../../../infra/mongo/indexes
       | 'card_player_currency'
       | 'card_trades'
       | 'card_acquisitions'
-      | 'card_transactions';
+      | 'card_transactions'
+      | 'card_operations'
+      | 'command_idempotency'
+      | 'card_outbox'
+      | 'card_pack_access';
     readonly name: string;
     readonly key: Record<string, 1 | -1>;
-    readonly options: { unique?: true; expireAfterSeconds?: number };
+    readonly options: { unique?: true; expireAfterSeconds?: number; partialFilterExpression?: Record<string, unknown> };
   }[];
 };
 

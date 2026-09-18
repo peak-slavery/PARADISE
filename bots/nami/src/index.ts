@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Events, GatewayIntentBits, type Client } from 'discord.js';
-import { createBot, isBotOperational, keys, readBotConfig, type BotServices, type MongoCollections } from '@eiflow/shared';
+import { createBot, createGuildEventGate, keys, readBotConfig, type BotServices, type MongoCollections } from '@eiflow/shared';
 import { DEFAULT_CONFIG, type LevelUpConfig } from './lib/store.js';
 import { setXpTracker, XpTracker, chatContentLength, type LevelUpEvent } from './lib/xp.js';
 
@@ -89,6 +89,7 @@ await createBot({
   unlimitedCommands: ['userinfo', 'serverinfo', 'about', 'help'],
 
   setup: async ({ client, services, log }) => {
+    const listen = createGuildEventGate(client, services);
     /**
      * Mongo handle holder. `services.mongo()` is re-read on a timer because
      * the shared runtime swaps in a fresh handle after a reconnect.
@@ -115,15 +116,13 @@ await createBot({
     tracker.start();
 
     /* --- chat activity -------------------------------------------------- */
-    client.on(Events.MessageCreate, async (message) => {
+    listen(Events.MessageCreate, async (message) => {
       try {
         // Bots and DMs never earn XP.
         if (message.author.bot || !message.guildId) return;
 
         const guildId = message.guildId;
         const userId = message.author.id;
-        if (!(await services.isAuthorized(guildId))) return;
-        if (!isBotOperational(await services.getControlState(guildId))) return;
 
         // Spam cannot inflate XP: one credit per member per window.
         const verdict = await services.redis.allow(keys.xpDebounce(guildId, userId), 1, CHAT_COOLDOWN_SECONDS);
@@ -159,11 +158,9 @@ await createBot({
       tracker.add(guildId, userId, { xp, voiceSeconds: seconds });
     };
 
-    client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    listen(Events.VoiceStateUpdate, async (oldState, newState) => {
       try {
         const guildId = newState.guild.id;
-        if (!(await services.isAuthorized(guildId))) return;
-        if (!isBotOperational(await services.getControlState(guildId))) return;
         const userId = newState.id;
         const bot = newState.member?.user.bot ?? false;
 

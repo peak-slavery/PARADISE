@@ -7,7 +7,7 @@ import {
   type MessageCreateOptions,
   type PartialGuildMember,
 } from 'discord.js';
-import { createBot, isBotOperational, readBotConfig } from '@eiflow/shared';
+import { createBot, createGuildEventGate, readBotConfig } from '@eiflow/shared';
 import {
   DEFAULT_CONFIG,
   channelFor,
@@ -31,6 +31,7 @@ await createBot({
   unlimitedCommands: ['userinfo', 'serverinfo', 'about', 'help'],
 
   setup: async ({ client, services, log }) => {
+    const listen = createGuildEventGate(client, services);
     /**
      * Renders the configured template for a join/leave and posts it.
      *
@@ -44,8 +45,6 @@ await createBot({
         if (member.user.bot) return;
 
         const guild = member.guild;
-        if (!(await services.isAuthorized(guild.id))) return;
-        if (!isBotOperational(await services.getControlState(guild.id))) return;
         const config = await readBotConfig<WelcomeConfig>(
           services.supabase,
           guild.id,
@@ -102,12 +101,12 @@ await createBot({
       }
     };
 
-    client.on(Events.GuildMemberAdd, (member) => {
-      void handle('welcome', member);
+    listen(Events.GuildMemberAdd, async (member) => {
+      await handle('welcome', member);
     });
 
-    client.on(Events.GuildMemberRemove, (member) => {
-      void handle('leave', member);
+    listen(Events.GuildMemberRemove, async (member) => {
+      await handle('leave', member);
     });
 
     log.info({ guilds: client.guilds.cache.size }, 'welcome bot initialised');

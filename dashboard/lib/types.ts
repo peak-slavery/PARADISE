@@ -7,6 +7,15 @@
 // browser bundle.
 // ---------------------------------------------------------------------------
 
+export type DashboardRole =
+  | 'OWNER'
+  | 'SUPER_ADMIN'
+  | 'SECURITY_ADMIN'
+  | 'TCG_ADMIN'
+  | 'SOFI_ADMIN'
+  | 'BOT_OPERATOR'
+  | 'AUDITOR';
+
 export type SecuritySeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export type ModActionType =

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AuditLogEvent, Events, GatewayIntentBits, type ClientEvents, type GuildTextBasedChannel } from 'discord.js';
-import { createBot, isBotOperational, sanitizeText } from '@eiflow/shared';
+import { AuditLogEvent, Events, GatewayIntentBits, type GuildTextBasedChannel } from 'discord.js';
+import { createBot, createGuildEventGate, sanitizeText } from '@eiflow/shared';
 import { evaluateThreat, gainedDangerousPermissions, type EventEnv, type ThreatSignal } from './lib/enforce.js';
 import { readConfig } from './lib/store.js';
 import { classifyContent, slmEnabled } from './lib/slm.js';
@@ -23,28 +23,7 @@ await createBot({
 
   setup: async ({ client, services, log }) => {
     const env: EventEnv = { client, services, log };
-
-    /**
-     * Registers an async listener whose rejection is always caught and logged.
-     * Typing against `ClientEvents` keeps every handler parameter inferred while
-     * still guaranteeing nothing escapes into the gateway.
-     */
-    const listen = <K extends keyof ClientEvents>(
-      event: K,
-      handler: (...args: ClientEvents[K]) => Promise<void>,
-    ): void => {
-      client.on(event, ((...args: ClientEvents[K]) => {
-        void (async () => {
-          const first = args[0] as { id?: string; guildId?: string; guild?: { id?: string } } | undefined;
-          const second = args[1] as { id?: string; guildId?: string; guild?: { id?: string } } | undefined;
-          const guildId = first?.guildId ?? first?.guild?.id ?? second?.guildId ?? second?.guild?.id ?? second?.id;
-          if (guildId && (!(await services.isAuthorized(guildId)) || !isBotOperational(await services.getControlState(guildId)))) return;
-          await handler(...args);
-        })().catch((err: unknown) => {
-          log.error({ err, event: String(event) }, 'antinuke event handler failed');
-        });
-      }) as (...args: unknown[]) => void);
-    };
+    const listen = createGuildEventGate(client, services);
 
     const inspect = (signal: ThreatSignal): void => {
       void evaluateThreat(env, signal).catch((err: unknown) => {

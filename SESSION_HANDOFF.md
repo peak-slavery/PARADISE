@@ -9,19 +9,22 @@
 
 ## Release checkpoint — 2026-09-17
 
-The operator authorized pushing the accumulated changes. Release branch:
-`release/cards-resilience-hardening` on `ei-point`; do not merge into production
-`main` until the release review findings are resolved. Local lint, workspace
-typechecks/tests, dashboard build, cards:check, 32 deployment checks, and audit
-passed. Luffy smoke passed 9 local checks; live Mongo parity was skipped.
-Cryptographic random defaults are now wired into the card engine and rarity selector.
+The operator authorized pushing the accumulated changes and then directed that
+everything land on `ei-point` `main` with no extra branches. Delivered: `0bff069`
+(card registry, AI resilience, hardening), `a137c9f` (trade version-conflict
+fix), `56930ef` (CI registry fix — empty `cards/Gold` tracked via `.gitkeep`,
+scanner ignores dotfiles, manifest pinned `eol=lf`). `main` fast-forwarded to
+`56930ef`; the temporary release branch was deleted locally and on the remote.
+CI run 35193202101 is fully green. Local gates passed: lint, workspace
+typechecks/tests, production build, cards:check, 32 deployment checks, audit.
+Luffy smoke passed 9 local checks; live Mongo parity skipped (Atlas paused).
 
-Static review found a conflicting Mongo `$set`/`$inc` on `version` in the offered
-card transfer, plus concerns about expired-trade refunds/unlocks, relative artwork
-URLs passed to embeds after debit, and unrestricted access to the free premium
-pack. These are not live-reproduced; green mock tests do not establish safety.
-Admin resync is absent and the image-provider endpoint remains unconfigured.
-Render billing suspension and paused Atlas clusters remain production blockers.
+Remaining known issues (static review, unreproduced): expired-trade
+refund/unlock settlement, relative artwork paths passed to embeds after pack
+debit, unrestricted `/open` access to the zero-price `limited.premium` pack,
+nested queue acquisition in the sell path, metadata-only sync skips, absent
+admin resync subcommand, unconfigured image-provider endpoint. Render billing
+suspension and paused Atlas clusters remain production blockers.
 
 ## 1. Project overview
 

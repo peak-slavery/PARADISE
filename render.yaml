@@ -53,6 +53,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -107,6 +109,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -153,6 +157,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -199,6 +205,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -265,6 +273,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -321,6 +331,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -375,6 +387,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET
@@ -421,6 +435,8 @@ services:
         value: info
       - key: REDIS_DAILY_COMMAND_BUDGET
         value: '8000'
+      - key: EIFLOW_ENV
+        value: production
       - key: DISCORD_TOKEN
         sync: false
       - key: HMAC_SECRET

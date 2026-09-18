@@ -289,11 +289,16 @@ checksum must be reverted from the snapshot, and fails on an unknown target.
 
 ### Monitoring and incidents
 
-The `Production monitor` workflow runs every six hours and fails on any
-degraded service, restart loop, or unavailable Supabase/Mongo/Redis dependency.
-The dashboard uses `DASHBOARD_HEALTH_TOKEN`; all eight bot services use
-`HEALTH_TOKEN`. Both are required only for authenticated
-readiness diagnostics.
+The independent `Production watchdog` workflow runs every five minutes and
+fails on any bot that is not fully ready. It records Gateway readiness,
+guild-lock reconciliation, Supabase/Mongo/Redis readiness, and redacted
+1/2/3-miss recovery state. The primary and secondary runners are the
+Cloudflare Worker and OCI Node runner under `infra/`; GitHub Actions remains an
+independent serialized control-plane check.
+
+The dashboard uses `DASHBOARD_HEALTH_TOKEN`; each bot uses its own entry in
+`BOT_HEALTH_TOKENS_JSON`. The per-bot map is required for authenticated
+readiness diagnostics and must contain exactly the eight canonical bot IDs.
 The weekly quota workflow alerts at 80% free-tier usage, and the restore drill
 runs weekly. Investigate the named service, retain the failed workflow log,
 check recent deployments and database migrations, roll back the affected
@@ -302,9 +307,9 @@ service, then rerun production smoke before closing the incident.
 Run `npm run smoke:production` against an isolated production-shaped
 environment before promotion. It requires the dashboard URL, service-role
 Supabase credentials, Mongo and Redis connections, the complete per-bot
-`HMAC_SECRETS_JSON` map, and a health URL for each of the eight bots.
-The health token must be the trusted shared diagnostic token used by the bot
-services; public health responses intentionally omit dependency details.
+`HMAC_SECRETS_JSON` map, `BOT_HEALTH_TOKENS_JSON`, and a health URL for each
+of the eight bots. Public health responses intentionally omit dependency
+details.
 
 ## Dependency posture
 

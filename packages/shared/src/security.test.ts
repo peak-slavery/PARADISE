@@ -6,8 +6,13 @@ import { enforceRateLimit } from './rate-limit.js';
 import { isSecureMongoUri } from './db/mongo.js';
 import { isGuildAuthorized, attachServerLock } from './server-lock.js';
 import { BotInterlink, INTERLINK_MAX_BYTES, type InterlinkEvent } from './interlink.js';
-import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
-import { buildClientOptions, buildDashboardEmbed, handleDashboardEmbed, parseGuildAuthorizationButton, redactAuditMeta } from './bot.js';
+import {
+  APPROVED_DEVELOPMENT_GUILD_ID,
+  APPROVED_PRODUCTION_GUILD_ID,
+  isApprovedGuild,
+} from './guild-policy.js';
+import { isGuildWhitelisted, resolveGuildAuthorization } from './whitelist.js';
+import { buildClientOptions, buildDashboardEmbed, handleDashboardEmbed, redactAuditMeta } from './bot.js';
 
 const schema = await import('node:fs').then(({ readFileSync }) =>
   readFileSync(new URL('../../../infra/supabase/schema.sql', import.meta.url), 'utf8'),
@@ -43,39 +48,129 @@ describe('Discord client options', () => {
 });
 
 describe('guild authorization controls', () => {
-  it('accepts only canonical review button identifiers', () => {
-    expect(parseGuildAuthorizationButton('guild-auth:temp:123456789012345678')).toEqual({
-      decision: 'temp',
-      guildId: '123456789012345678',
-    });
+  it('allows only the canonical guild for the matching runtime environment', () => {
+    expect(isApprovedGuild(APPROVED_PRODUCTION_GUILD_ID, { runtimeEnvironment: 'production' })).toBe(true);
+    expect(isApprovedGuild(APPROVED_DEVELOPMENT_GUILD_ID, { runtimeEnvironment: 'development' })).toBe(true);
+    expect(isApprovedGuild(APPROVED_PRODUCTION_GUILD_ID, { runtimeEnvironment: 'development' })).toBe(false);
+    expect(isApprovedGuild(APPROVED_DEVELOPMENT_GUILD_ID, { runtimeEnvironment: 'production' })).toBe(false);
   });
 
-  it('rejects forged or malformed review button identifiers', () => {
-    expect(parseGuildAuthorizationButton('guild-auth:full:123')).toBeNull();
-    expect(parseGuildAuthorizationButton('guild-auth:full:123456789012345678:extra')).toBeNull();
-    expect(parseGuildAuthorizationButton('guild-auth:approve:123456789012345678')).toBeNull();
+  it('rejects missing, malformed, and non-canonical guilds before storage', () => {
+    expect(isApprovedGuild('', { runtimeEnvironment: 'production' })).toBe(false);
+    expect(isApprovedGuild('123', { runtimeEnvironment: 'production' })).toBe(false);
+    expect(isApprovedGuild('849213847293847021', { runtimeEnvironment: 'production' })).toBe(false);
   });
 });
 
 describe('server lock lifecycle', () => {
-  it('returns cleanup for the server reconciliation timer', () => {
-    vi.useFakeTimers();
-    try {
-      let ready: (() => void) | undefined;
-      const client = {
-        once: (_event: string, callback: () => void) => { ready = callback; },
-        on: () => undefined,
-        guilds: { cache: new Map() },
-      } as never;
-      const cleanup = attachServerLock(client, {} as never);
+  it('returns a control that reconciles the server directory', async () => {
+    const client = {
+      once: () => undefined,
+      on: () => undefined,
+      off: () => undefined,
+      guilds: { cache: new Map() },
+    } as never;
+    const control = attachServerLock(client, {
+      env: { runtimeEnvironment: 'production', botId: 'test-bot' },
+      log: { info: () => undefined, warn: () => undefined, error: () => undefined } as never,
+      supabase: null,
+      record: () => undefined,
+    });
 
-      ready?.();
-      expect(vi.getTimerCount()).toBe(1);
-      cleanup?.();
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(control.isReady()).toBe(false);
+    await expect(control.reconcile()).resolves.toBe(false);
+    control.stop();
+  });
+
+  it('becomes ready only after a successful canonical reconciliation', async () => {
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({ maybeSingle: async () => ({ data: { whitelist_type: 'full' }, error: null }) }),
+          }),
+        }),
+      }),
+    } as never;
+    const client = {
+      once: () => undefined,
+      on: () => undefined,
+      off: () => undefined,
+      guilds: { cache: new Map() },
+    } as never;
+    const control = attachServerLock(client, {
+      env: { runtimeEnvironment: 'production', botId: 'test-bot' },
+      log: { info: () => undefined, warn: () => undefined, error: () => undefined } as never,
+      supabase,
+      record: () => undefined,
+    });
+
+    await expect(control.reconcile()).resolves.toBe(true);
+    expect(control.isReady()).toBe(true);
+    control.stop();
+  });
+
+  it('leaves current guilds when Supabase authorization is unavailable', async () => {
+    const leave = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      once: () => undefined,
+      on: () => undefined,
+      off: () => undefined,
+      guilds: {
+        cache: new Map([['848841415940898827', {
+          id: '848841415940898827',
+          name: 'test-guild',
+          memberCount: 1,
+          leave,
+        }]]),
+      },
+    } as never;
+    const control = attachServerLock(client, {
+      env: { runtimeEnvironment: 'production', botId: 'test-bot' },
+      log: { info: () => undefined, warn: () => undefined, error: () => undefined } as never,
+      supabase: null,
+      record: () => undefined,
+    });
+
+    await expect(control.reconcile()).resolves.toBe(false);
+    expect(leave).toHaveBeenCalledOnce();
+    expect(control.isReady()).toBe(false);
+    control.stop();
+  });
+
+  it('marks readiness unavailable when authorization fails', async () => {
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({ maybeSingle: async () => ({ data: null, error: { code: 'PGRST205' } }) }),
+          }),
+        }),
+      }),
+    } as never;
+    const client = {
+      once: () => undefined,
+      on: () => undefined,
+      off: () => undefined,
+      guilds: {
+        cache: new Map([['848841415940898827', {
+          id: '848841415940898827',
+          name: 'test-guild',
+          memberCount: 1,
+          leave: vi.fn().mockResolvedValue(undefined),
+        }]]),
+      },
+    } as never;
+    const control = attachServerLock(client, {
+      env: { runtimeEnvironment: 'production', botId: 'test-bot' },
+      log: { info: () => undefined, warn: () => undefined, error: () => undefined } as never,
+      supabase,
+      record: () => undefined,
+    });
+
+    await expect(control.reconcile()).resolves.toBe(false);
+    expect(control.isReady()).toBe(false);
+    control.stop();
   });
 });
 
@@ -98,12 +193,12 @@ describe('HMAC transport', () => {
 });
 
 describe('guild whitelist', () => {
-  it('fails closed without Supabase and recognizes configured fixed guilds', async () => {
-    await expect(isGuildWhitelisted(null, '123456789012345678')).resolves.toBe(false);
-    expect(isPermanentGuild({ devGuildId: '123456789012345678', mainGuildId: undefined }, '123456789012345678')).toBe(true);
+  it('fails closed without Supabase and never authorizes a non-canonical guild', async () => {
+    await expect(isGuildWhitelisted(null, APPROVED_PRODUCTION_GUILD_ID, { runtimeEnvironment: 'production' })).resolves.toBe(false);
+    await expect(isGuildWhitelisted(null, '849213847293847021', { runtimeEnvironment: 'production' })).resolves.toBe(false);
   });
 
-  it('accepts active full whitelist rows', async () => {
+  it('accepts only an active row for the canonical guild in the matching environment', async () => {
     const row = { whitelist_type: 'full', expires_at: null };
     const supabase = {
       from: () => ({
@@ -114,14 +209,23 @@ describe('guild whitelist', () => {
         }),
       }),
     } as never;
-    await expect(isGuildWhitelisted(supabase, '123456789012345678')).resolves.toBe(true);
+    await expect(isGuildWhitelisted(
+      supabase,
+      APPROVED_PRODUCTION_GUILD_ID,
+      { runtimeEnvironment: 'production' },
+    )).resolves.toBe(true);
+    await expect(isGuildWhitelisted(
+      supabase,
+      APPROVED_PRODUCTION_GUILD_ID,
+      { runtimeEnvironment: 'development' },
+    )).resolves.toBe(false);
   });
 
-  it('does not trust a cached temporary grant after its expiry', async () => {
+  it('does not trust a cached grant after its expiry', async () => {
     const expiry = new Date(Date.now() - 1_000).toISOString();
     const calls: string[] = [];
     const kv = {
-      get: async () => ({ allowed: true, expiresAt: expiry }),
+      get: async () => ({ allowed: true }),
       set: async () => undefined,
     } as never;
     const supabase = {
@@ -144,11 +248,16 @@ describe('guild whitelist', () => {
       },
     } as never;
 
-    await expect(resolveGuildAuthorization(supabase, '849213847293847021', undefined, kv)).resolves.toBe('denied');
+    await expect(resolveGuildAuthorization(
+      supabase,
+      APPROVED_PRODUCTION_GUILD_ID,
+      { runtimeEnvironment: 'production' },
+      kv,
+    )).resolves.toBe('denied');
     expect(calls).toEqual(['guild_whitelists']);
   });
 
-  it('fails closed on a PostgREST schema-cache miss instead of using legacy authorization', async () => {
+  it('preserves authorization unavailability only for the canonical guild', async () => {
     const failing = {
       from: () => ({
         select: () => ({
@@ -159,7 +268,33 @@ describe('guild whitelist', () => {
       }),
     } as never;
 
-    await expect(resolveGuildAuthorization(failing, '849213847293847021')).resolves.toBe('unavailable');
+    await expect(resolveGuildAuthorization(
+      failing,
+      APPROVED_PRODUCTION_GUILD_ID,
+      { runtimeEnvironment: 'production' },
+    )).resolves.toBe('unavailable');
+    await expect(resolveGuildAuthorization(
+      failing,
+      '849213847293847021',
+      { runtimeEnvironment: 'production' },
+    )).resolves.toBe('denied');
+  });
+
+  it('does not write cache entries for unauthorized guilds', async () => {
+    const writes: unknown[] = [];
+    const kv = { set: async (...args: unknown[]) => { writes.push(args); } } as never;
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+          }),
+        }),
+      }),
+    } as never;
+
+    await resolveGuildAuthorization(supabase, '849213847293847021', { runtimeEnvironment: 'production' }, kv);
+    expect(writes).toEqual([]);
   });
 });
 
@@ -222,56 +357,68 @@ describe('database transport validation', () => {
 });
 
 describe('guild authorization', () => {
+  const productionPolicy = { runtimeEnvironment: 'production' as const };
+  const developmentPolicy = { runtimeEnvironment: 'development' as const };
+
   it('fails closed when the authorization source is unavailable', async () => {
-    // A missing client or a query error must never be treated as "authorized":
-    // an outage would otherwise let any guild drive the bot's moderation and
-    // antinuke features.
-    await expect(isGuildAuthorized(null, '849213847293847021')).resolves.toBe(false);
+    await expect(isGuildAuthorized(null, APPROVED_PRODUCTION_GUILD_ID, productionPolicy)).resolves.toBe(false);
 
     const failing = {
       from: () => ({
         select: () => ({
           eq: () => ({
-            maybeSingle: async () => ({ data: null, error: { code: '500', message: 'boom' } }),
+            is: () => ({
+              maybeSingle: async () => ({ data: null, error: { code: '500', message: 'boom' } }),
+            }),
           }),
         }),
       }),
     } as never;
 
-    await expect(isGuildAuthorized(failing, '849213847293847021')).resolves.toBe(false);
+    await expect(isGuildAuthorized(failing, APPROVED_PRODUCTION_GUILD_ID, productionPolicy)).resolves.toBe(false);
   });
 
-  it('authorizes only an explicit positive row', async () => {
-    const build = (row: unknown, error: unknown = null) =>
-      ({
-        from: (table: string) => ({
-          select: () => ({
-            eq: () => table === 'guild_whitelists'
-              ? { is: () => ({ maybeSingle: async () => ({ data: null, error: { code: '42P01' } }) }) }
-              : { maybeSingle: async () => ({ data: row, error }) },
-          }),
-        }),
-      }) as never;
-
-    await expect(isGuildAuthorized(build({ authorized: true }), '849213847293847021')).resolves.toBe(true);
-    await expect(isGuildAuthorized(build({ authorized: false }), '849213847293847021')).resolves.toBe(false);
-    await expect(isGuildAuthorized(build(null), '849213847293847021')).resolves.toBe(false);
-  });
-
-  it('does not fall back to stale authorization after a whitelist query error', async () => {
-    const failing = {
-      from: (table: string) => ({
+  it('authorizes an active row only for the matching canonical guild', async () => {
+    const row = { whitelist_type: 'full', expires_at: null, removed_at: null };
+    const supabase = {
+      from: () => ({
         select: () => ({
           eq: () => ({
-            is: async () => table === 'guild_whitelists'
-              ? { data: null, error: { code: '500', message: 'temporary failure' } }
-              : { data: { authorized: true }, error: null },
+            is: () => ({ maybeSingle: async () => ({ data: row, error: null }) }),
           }),
         }),
       }),
     } as never;
 
-    await expect(isGuildAuthorized(failing, '849213847293847021')).resolves.toBe(false);
+    await expect(isGuildAuthorized(supabase, APPROVED_PRODUCTION_GUILD_ID, productionPolicy)).resolves.toBe(true);
+    await expect(isGuildAuthorized(supabase, APPROVED_PRODUCTION_GUILD_ID, developmentPolicy)).resolves.toBe(false);
+    await expect(isGuildAuthorized(supabase, APPROVED_DEVELOPMENT_GUILD_ID, developmentPolicy)).resolves.toBe(true);
+  });
+
+  it('does not fall back to stale or legacy authorization rows', async () => {
+    const legacy = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: async () => ({ data: { authorized: true }, error: null }),
+          }),
+        }),
+      }),
+    } as never;
+
+    await expect(isGuildAuthorized(legacy, APPROVED_PRODUCTION_GUILD_ID, productionPolicy)).resolves.toBe(false);
+
+    const failing = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            is: async () => ({ data: null, error: { code: '500', message: 'temporary failure' } }),
+          }),
+        }),
+      }),
+    } as never;
+
+    await expect(isGuildAuthorized(failing, APPROVED_PRODUCTION_GUILD_ID, productionPolicy)).resolves.toBe(false);
   });
 });
 

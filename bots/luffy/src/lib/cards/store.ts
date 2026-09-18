@@ -7,9 +7,13 @@
 // shared bot runtime so this layer never directly calls the driver.
 // ---------------------------------------------------------------------------
 
+import { createHash } from 'node:crypto';
+import type { ClientSession } from 'mongodb';
 import type {
   CardAcquisitionDoc,
   CardInstanceDoc,
+  CardOperationRecord,
+  CardOutboxEvent,
   CardPackDoc,
   CardPlayerCurrencyDoc,
   CardRank,
@@ -47,6 +51,107 @@ function now(): Date {
 
 function db(ctx: CardCtx) {
   return ctx.services.requireMongo();
+}
+
+function stableValue(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(stableValue);
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== '__proto__' && key !== 'constructor' && key !== 'prototype')
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, child]) => [key, stableValue(child)]),
+  );
+}
+
+function requestHash(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(stableValue(value))).digest('hex');
+}
+
+function operationId(ctx: CardCtx, kind: CardOperationRecord['kind'], key: string): string {
+  const raw = JSON.stringify(stableValue({
+    bot_id: ctx.services.env.botId,
+    guild_id: ctx.guildId,
+    user_id: ctx.userId,
+    interaction_id: ctx.interaction.id,
+    kind,
+    key,
+  }));
+  return `cardop_${createHash('sha256').update(raw).digest('hex').slice(0, 32)}`;
+}
+
+function operationKey(...parts: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(stableValue(parts))).digest('hex');
+}
+
+function appendOutbox(
+  ctx: CardCtx,
+  session: ClientSession,
+  operationIdValue: string,
+  event: Omit<CardOutboxEvent, 'event_id' | 'status' | 'available_at' | 'attempts' | 'created_at' | 'updated_at' | 'last_error' | 'published_at'>,
+): Promise<void> {
+  const mongo = db(ctx);
+  const timestamp = now();
+  const eventId = `cardout_${createHash('sha256').update(`${operationIdValue}:${event.aggregate_type}:${event.aggregate_id}:${event.event_type}`).digest('hex').slice(0, 32)}`;
+  return mongo.card_outbox.insertOne({
+    ...event,
+    event_id: eventId,
+    status: 'pending',
+    available_at: timestamp,
+    attempts: 0,
+    created_at: timestamp,
+    updated_at: timestamp,
+  }, { session });
+}
+
+async function runCardOperation<T>(
+  ctx: CardCtx,
+  kind: CardOperationRecord['kind'],
+  key: string,
+  request: unknown,
+  work: (session: ClientSession, operationIdValue: string) => Promise<T>,
+): Promise<T> {
+  return runQueued(ctx, async () => {
+    const mongo = await db(ctx);
+    const id = operationId(ctx, kind, key);
+    const hash = requestHash(request);
+    return ctx.services.executeCardTransaction(async (session) => {
+      const existing = await mongo.card_operations.findOne({ operation_id: id }, { session });
+      if (existing) {
+        if (existing.status === 'completed') {
+          if (existing.request_hash && existing.request_hash !== hash) {
+            throw new UserError('This interaction was already used for a different request.');
+          }
+          return existing.result as T;
+        }
+        if (existing.status === 'failed') {
+          throw new UserError(existing.error_code ? `Card operation failed: ${existing.error_code}` : 'Card operation failed.');
+        }
+        throw new ServiceUnavailableError('Database operation is already in progress');
+      }
+
+      const record: CardOperationRecord = {
+        operation_id: id,
+        guild_id: ctx.guildId,
+        actor_user_id: ctx.userId,
+        kind,
+        status: 'pending',
+        request_hash: hash,
+        created_at: now(),
+        updated_at: now(),
+        completed_at: null,
+      };
+      await mongo.card_operations.insertOne(record, { session });
+      const result = await work(session, id);
+      await mongo.card_operations.updateOne(
+        { operation_id: id, status: 'pending' },
+        { $set: { status: 'completed', result, updated_at: now(), completed_at: now() } },
+        { session },
+      );
+      return result;
+    });
+  });
 }
 
 /**
@@ -100,6 +205,67 @@ export async function getCurrency(ctx: CardCtx): Promise<CardPlayerCurrencyDoc> 
   });
 }
 
+async function applyCurrencyDeltaInSession(
+  ctx: CardCtx,
+  mongo: Awaited<ReturnType<typeof db>>,
+  session: ClientSession,
+  delta: number,
+  reason: CardTransactionDoc['reason'],
+  reference_id: string | null,
+  operationIdValue: string | undefined,
+  expected_balance?: number,
+): Promise<{ doc: CardPlayerCurrencyDoc; txn: CardTransactionDoc }> {
+  if (delta < 0 && expected_balance === undefined) {
+    // Debits without a CAS expectation must still confirm the player has
+    // enough balance. Read once, validate, then upsert.
+    const current = await mongo.card_player_currency.findOne({
+      guild_id: ctx.guildId,
+      user_id: ctx.userId,
+    }, { session });
+    if (!current || current.balance + delta < 0) {
+      throw new UserError('Insufficient berries.');
+    }
+  }
+  const filter = expected_balance !== undefined
+    ? { guild_id: ctx.guildId, user_id: ctx.userId, balance: expected_balance }
+    : { guild_id: ctx.guildId, user_id: ctx.userId };
+  const txn: CardTransactionDoc = {
+    txn_id: generateTransactionId(),
+    guild_id: ctx.guildId,
+    user_id: ctx.userId,
+    delta,
+    balance_after: expected_balance !== undefined
+      ? expected_balance + delta
+      : 0,
+    reason,
+    reference_id,
+    ...(operationIdValue ? { operation_id: operationIdValue } : {}),
+    created_at: now(),
+  };
+  const result = await mongo.card_player_currency.findOneAndUpdate(
+    filter,
+    {
+      $inc: delta >= 0 ? { balance: delta, lifetime_earned: delta } : { balance: delta, lifetime_spent: -delta },
+      $set: { updated_at: now() },
+      $setOnInsert: {
+        guild_id: ctx.guildId,
+        user_id: ctx.userId,
+      },
+    },
+    { upsert: true, returnDocument: 'after', session },
+  );
+  if (!result) throw new ServiceUnavailableError('Database');
+  txn.balance_after = result.balance;
+  await mongo.card_transactions.insertOne(txn, { session });
+  emitCardEvent(
+    ctx,
+    delta >= 0 ? 'CURRENCY_CREDITED' : 'CURRENCY_DEBITED',
+    `${ctx.userId} ${delta >= 0 ? 'received' : 'spent'} ${Math.abs(delta)} berries (${reason})`,
+    { delta, balance_after: txn.balance_after, reason, reference_id, txn_id: txn.txn_id },
+  );
+  return { doc: result, txn };
+}
+
 export async function applyCurrencyDelta(
   ctx: CardCtx,
   delta: number,
@@ -109,56 +275,8 @@ export async function applyCurrencyDelta(
 ): Promise<{ doc: CardPlayerCurrencyDoc; txn: CardTransactionDoc }> {
   return runQueued(ctx, async () => {
     const mongo = await db(ctx);
-    if (delta < 0 && expected_balance === undefined) {
-      // Debits without a CAS expectation must still confirm the player has
-      // enough balance. Read once, validate, then upsert.
-      const current = await mongo.card_player_currency.findOne({
-        guild_id: ctx.guildId,
-        user_id: ctx.userId,
-      });
-      if (!current || current.balance + delta < 0) {
-        throw new UserError('Insufficient berries.');
-      }
-    }
-    const filter = expected_balance !== undefined
-      ? { guild_id: ctx.guildId, user_id: ctx.userId, balance: expected_balance }
-      : { guild_id: ctx.guildId, user_id: ctx.userId };
-    const txn: CardTransactionDoc = {
-      txn_id: generateTransactionId(),
-      guild_id: ctx.guildId,
-      user_id: ctx.userId,
-      delta,
-      balance_after: expected_balance !== undefined
-        ? expected_balance + delta
-        : 0,
-      reason,
-      reference_id,
-      created_at: now(),
-    };
-    const result = await mongo.card_player_currency.findOneAndUpdate(
-      filter,
-      {
-        $inc: delta >= 0 ? { balance: delta, lifetime_earned: delta } : { balance: delta, lifetime_spent: -delta },
-        $set: { updated_at: now() },
-        $setOnInsert: {
-          guild_id: ctx.guildId,
-          user_id: ctx.userId,
-        },
-      },
-      { upsert: true, returnDocument: 'after' },
-    );
-    if (!result) {
-      throw new ServiceUnavailableError('Database');
-    }
-    txn.balance_after = result.balance;
-    await mongo.card_transactions.insertOne(txn);
-    emitCardEvent(
-      ctx,
-      delta >= 0 ? 'CURRENCY_CREDITED' : 'CURRENCY_DEBITED',
-      `${ctx.userId} ${delta >= 0 ? 'received' : 'spent'} ${Math.abs(delta)} berries (${reason})`,
-      { delta, balance_after: txn.balance_after, reason, reference_id, txn_id: txn.txn_id },
-    );
-    return { doc: result, txn };
+    return ctx.services.executeCardTransaction((session) =>
+      applyCurrencyDeltaInSession(ctx, mongo, session, delta, reason, reference_id, undefined, expected_balance));
   });
 }
 
@@ -234,35 +352,15 @@ export async function purchaseAndOpenPack(
   packInstanceIds: string[],
   draws: { rank: CardRank; definition_id: string; instance_id: string }[],
 ): Promise<CardInstanceDoc[]> {
-  return runQueued(ctx, async () => {
-    const mongo = await db(ctx);
-    // 1. debit currency
-    const cur = await mongo.card_player_currency.findOneAndUpdate(
-      { guild_id: ctx.guildId, user_id: ctx.userId, balance: { $gte: pack.price } },
-      {
-        $inc: { balance: -pack.price, lifetime_spent: pack.price },
-        $set: { updated_at: now() },
-      },
-      { returnDocument: 'after' },
-    );
-    if (!cur) {
-      throw new UserError(`You need ${pack.price} berries to open a ${pack.display_name}.`);
+  const request = { pack_id: pack.pack_id, pack_instance_ids: packInstanceIds, draws };
+  return runCardOperation(ctx, 'pack_open', operationKey('pack', pack.pack_id), request, async (session, id) => {
+    const mongo = db(ctx);
+    if (packInstanceIds.length !== draws.length || draws.length === 0 || draws.length !== pack.card_count) {
+      throw new ServiceUnavailableError('Pack draw has an invalid card count.');
     }
-    if (pack.price > 0) {
-      await mongo.card_transactions.insertOne({
-        txn_id: generateTransactionId(),
-        guild_id: ctx.guildId,
-        user_id: ctx.userId,
-        delta: -pack.price,
-        balance_after: cur.balance,
-        reason: 'pack_purchase',
-        reference_id: pack.pack_id,
-        created_at: now(),
-      });
-    }
-    // 2. insert instances atomically (rollback currency on failure)
-    if (draws.length === 0) {
-      throw new ServiceUnavailableError('Empty pack draw');
+    const instanceIds = new Set(packInstanceIds);
+    if (instanceIds.size !== packInstanceIds.length || packInstanceIds.some((id) => !/^c_inst_[a-f0-9]{16}$/.test(id))) {
+      throw new ServiceUnavailableError('Pack draw contains invalid instance ids.');
     }
     const createdAt = now();
     const docs: CardInstanceDoc[] = draws.map((d, idx) => {
@@ -284,16 +382,50 @@ export async function purchaseAndOpenPack(
         updated_at: createdAt,
       };
     });
-    try {
-      await mongo.card_instances.insertMany(docs, { ordered: true });
-    } catch (err) {
-      // rollback the currency debit (best-effort; not security-critical)
-      await mongo.card_player_currency.updateOne(
-        { guild_id: ctx.guildId, user_id: ctx.userId },
-        { $inc: { balance: pack.price, lifetime_spent: -pack.price }, $set: { updated_at: now() } },
-      );
-      throw err;
+
+    // Reserve the pack's supply and debit currency in the same Mongo transaction.
+    // The operation record is inserted first, so a retry after a commit retry or
+    // process crash observes the same operation and cannot mint another pack.
+    if (draws.some((d) => getDefinition(d.definition_id)?.total_supply ?? 0 > 0)) {
+      const limitedDefinitions = [...new Set(draws.map((d) => d.definition_id))];
+      const existing = await mongo.card_instances.countDocuments({
+        definition_id: { $in: limitedDefinitions },
+        release_event: { $ne: null },
+      }, { session });
+      for (const d of draws) {
+        const def = getDefinition(d.definition_id);
+        const count = await mongo.card_instances.countDocuments({ definition_id: d.definition_id }, { session });
+        if ((def?.total_supply ?? 0) > 0 && count >= def!.total_supply) {
+          throw new UserError(`${def!.character} (${def!.rank}) is sold out.`);
+        }
+      }
+      void existing;
     }
+
+    if (pack.price > 0) {
+      const cur = await mongo.card_player_currency.findOneAndUpdate(
+        { guild_id: ctx.guildId, user_id: ctx.userId, balance: { $gte: pack.price } },
+        {
+          $inc: { balance: -pack.price, lifetime_spent: pack.price },
+          $set: { updated_at: createdAt },
+        },
+        { returnDocument: 'after', session },
+      );
+      if (!cur) throw new UserError(`You need ${pack.price} berries to open a ${pack.display_name}.`);
+      await mongo.card_transactions.insertOne({
+        txn_id: generateTransactionId(),
+        guild_id: ctx.guildId,
+        user_id: ctx.userId,
+        delta: -pack.price,
+        balance_after: cur.balance,
+        reason: 'pack_purchase',
+        reference_id: pack.pack_id,
+        operation_id: id,
+        created_at: createdAt,
+      }, { session });
+    }
+
+    await mongo.card_instances.insertMany(docs, { ordered: true, session });
     await mongo.card_acquisitions.insertMany(
       docs.map((instance) => {
         const def = getDefinition(instance.definition_id);
@@ -305,14 +437,22 @@ export async function purchaseAndOpenPack(
           instance_id: instance.instance_id,
           definition_id: instance.definition_id,
           pack_id: pack.pack_id,
-          source: 'pack_open' as const,
+          source: 'pack_open',
           base_value: def.base_value,
           berries_delta: -pack.price,
+          operation_id: id,
           acquired_at: createdAt,
         };
       }),
-      { ordered: true },
+      { ordered: true, session },
     );
+    await appendOutbox(ctx, session, id, {
+      guild_id: ctx.guildId,
+      aggregate_type: 'card_pack',
+      aggregate_id: pack.pack_id,
+      event_type: 'pack_opened',
+      payload: { pack_id: pack.pack_id, instance_ids: docs.map((d) => d.instance_id), operation_id: id },
+    });
     emitCardEvent(
       ctx,
       'PACK_OPENED',
@@ -350,8 +490,9 @@ export async function sellInstance(
   sell_value: number,
   definition_id: string,
 ): Promise<{ doc: CardInstanceDoc; txn: CardTransactionDoc }> {
-  return runQueued(ctx, async () => {
-    const mongo = await db(ctx);
+  const request = { instance_id, expected_version, expected_status, expected_owner_user_id, expected_owner_guild_id, sell_value, definition_id };
+  return runCardOperation(ctx, 'sell', operationKey('sell', instance_id), request, async (session, id) => {
+    const mongo = db(ctx);
     const result = await mongo.card_instances.findOneAndUpdate(
       {
         instance_id,
@@ -361,20 +502,11 @@ export async function sellInstance(
         owner_guild_id: expected_owner_guild_id,
       },
       { $set: { status: 'sold', version: expected_version + 1, updated_at: now() } },
-      { returnDocument: 'after' },
+      { returnDocument: 'after', session },
     );
-    if (!result) {
-      throw new UserError('That card is no longer sellable.');
-    }
-    const credit = await applyCurrencyDelta(
-      ctx,
-      sell_value,
-      'card_sale',
-      instance_id,
-    );
-    if (!Number.isSafeInteger(credit.doc.balance)) {
-      throw new ServiceUnavailableError('Currency overflow');
-    }
+    if (!result) throw new UserError('That card is no longer sellable.');
+    const credit = await applyCurrencyDelta(ctx, sell_value, 'card_sale', instance_id);
+    if (!Number.isSafeInteger(credit.doc.balance)) throw new ServiceUnavailableError('Currency overflow');
     await mongo.card_acquisitions.insertOne({
       acquisition_id: generateAcquisitionId(),
       guild_id: ctx.guildId,
@@ -385,14 +517,28 @@ export async function sellInstance(
       source: 'sold_payout',
       base_value: sell_value,
       berries_delta: sell_value,
+      operation_id: id,
       acquired_at: now(),
+    }, { session });
+    await mongo.card_transactions.insertOne({
+      txn_id: generateTransactionId(),
+      guild_id: ctx.guildId,
+      user_id: ctx.userId,
+      delta: sell_value,
+      balance_after: credit.doc.balance,
+      reason: 'card_sale',
+      reference_id: instance_id,
+      operation_id: id,
+      created_at: now(),
+    }, { session });
+    await appendOutbox(ctx, session, id, {
+      guild_id: ctx.guildId,
+      aggregate_type: 'card_instance',
+      aggregate_id: instance_id,
+      event_type: 'card_sold',
+      payload: { instance_id, definition_id, sell_value, balance_after: credit.doc.balance, operation_id: id },
     });
-    emitCardEvent(
-      ctx,
-      'CARD_SOLD',
-      `${ctx.userId} sold ${definition_id} for ${sell_value} berries`,
-      { instance_id, definition_id, sell_value, balance_after: credit.txn.balance_after, txn_id: credit.txn.txn_id },
-    );
+    emitCardEvent(ctx, 'CARD_SOLD', `${ctx.userId} sold ${definition_id} for ${sell_value} berries`, { instance_id, definition_id, sell_value, balance_after: credit.txn.balance_after, txn_id: credit.txn.txn_id });
     return { doc: result, txn: credit.txn };
   });
 }

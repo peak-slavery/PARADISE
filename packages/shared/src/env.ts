@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import {
+  APPROVED_DEVELOPMENT_GUILD_ID,
+  APPROVED_PRODUCTION_GUILD_ID,
+  MASTER_OPERATOR_DISCORD_ID,
+} from './guild-policy.js';
 
 /**
  * Loads .env.local / .env if present. Uses Node 22's built-in parser so we do
@@ -43,16 +48,19 @@ const DeployEnvSchema = z.object({
   BOT_ID: z.string().min(1),
   DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN is required'),
   DISCORD_CLIENT_ID: z.string().min(1, 'DISCORD_CLIENT_ID is required'),
-  // Optional: a global registration also clears the guild-scoped copies for
-  // these servers so commands never appear twice (global + guild at once).
-  DEV_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
-  MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
+  EIFLOW_ENV: z.enum(['production', 'development']),
+  MASTER_DISCORD_ID: optionalDiscordId,
+  // Canonical IDs are required runtime inputs. Supplying a different value is
+  // rejected by the runtime loader rather than silently normalized.
+  DEV_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/)),
+  MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/)),
 });
 
 export interface DeployEnv {
   botId: string;
   discordToken: string;
   discordClientId: string;
+  runtimeEnvironment: 'production' | 'development';
   devGuildId?: string;
   mainGuildId?: string;
 }
@@ -71,12 +79,13 @@ const EnvSchema = z.object({
 
   OWNER_IDS: csvIds,
   MASTER_DISCORD_ID: optionalDiscordId,
+  EIFLOW_ENV: z.enum(['production', 'development']),
   HMAC_SECRET: z.preprocess(
     emptyToUndefined,
-    z.string().min(32, 'HMAC_SECRET must be at least 32 characters').optional(),
-  ).default(''),
-  DEV_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
-  MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
+    z.string().min(32, 'HMAC_SECRET must be at least 32 characters'),
+  ),
+  DEV_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/)),
+  MAIN_GUILD_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/)),
   DEV_AUTH_CHANNEL_ID: z.preprocess(emptyToUndefined, z.string().regex(/^\d{17,20}$/).optional()),
 
   SUPABASE_URL: optionalHttpsUrl,
@@ -146,6 +155,33 @@ const EnvSchema = z.object({
 
 export type RawEnv = z.input<typeof EnvSchema>;
 
+export function validateCanonicalSecurityConfig(env: Pick<Env, 'runtimeEnvironment' | 'masterDiscordId' | 'devGuildId' | 'mainGuildId'>): void {
+  if (env.runtimeEnvironment !== 'production' && env.runtimeEnvironment !== 'development') {
+    throw new Error('EIFLOW_ENV must be either production or development');
+  }
+  if (env.masterDiscordId !== MASTER_OPERATOR_DISCORD_ID) {
+    throw new Error(`MASTER_DISCORD_ID must be the canonical master operator ${MASTER_OPERATOR_DISCORD_ID}`);
+  }
+  if (env.devGuildId !== APPROVED_DEVELOPMENT_GUILD_ID) {
+    throw new Error(`DEV_GUILD_ID must be the canonical development guild ${APPROVED_DEVELOPMENT_GUILD_ID}`);
+  }
+  if (env.mainGuildId !== APPROVED_PRODUCTION_GUILD_ID) {
+    throw new Error(`MAIN_GUILD_ID must be the canonical production guild ${APPROVED_PRODUCTION_GUILD_ID}`);
+  }
+}
+
+export function validateCanonicalDeployConfig(env: Pick<DeployEnv, 'runtimeEnvironment' | 'devGuildId' | 'mainGuildId'>): void {
+  if (env.runtimeEnvironment !== 'production' && env.runtimeEnvironment !== 'development') {
+    throw new Error('EIFLOW_ENV must be either production or development');
+  }
+  if (env.devGuildId !== APPROVED_DEVELOPMENT_GUILD_ID) {
+    throw new Error(`DEV_GUILD_ID must be the canonical development guild ${APPROVED_DEVELOPMENT_GUILD_ID}`);
+  }
+  if (env.mainGuildId !== APPROVED_PRODUCTION_GUILD_ID) {
+    throw new Error(`MAIN_GUILD_ID must be the canonical production guild ${APPROVED_PRODUCTION_GUILD_ID}`);
+  }
+}
+
 export function loadDeployEnv(overrides: Partial<z.input<typeof DeployEnvSchema>> = {}): DeployEnv {
   const parsed = DeployEnvSchema.safeParse({ ...process.env, ...overrides });
   if (!parsed.success) {
@@ -159,6 +195,7 @@ export function loadDeployEnv(overrides: Partial<z.input<typeof DeployEnvSchema>
     botId: parsed.data.BOT_ID,
     discordToken: parsed.data.DISCORD_TOKEN,
     discordClientId: parsed.data.DISCORD_CLIENT_ID,
+    runtimeEnvironment: parsed.data.EIFLOW_ENV,
     devGuildId: parsed.data.DEV_GUILD_ID,
     mainGuildId: parsed.data.MAIN_GUILD_ID,
   };
@@ -173,6 +210,7 @@ export interface Env {
 
   discordToken: string;
   discordClientId: string;
+  runtimeEnvironment: 'production' | 'development';
 
   ownerIds: string[];
   masterDiscordId: string | undefined;
@@ -278,6 +316,7 @@ export function loadEnv(overrides: Partial<RawEnv> = {}): Env {
     discordClientId: d.DISCORD_CLIENT_ID,
     ownerIds: d.OWNER_IDS,
     masterDiscordId: d.MASTER_DISCORD_ID,
+    runtimeEnvironment: d.EIFLOW_ENV,
     hmacSecret: d.HMAC_SECRET,
     devGuildId: d.DEV_GUILD_ID,
     mainGuildId: d.MAIN_GUILD_ID,

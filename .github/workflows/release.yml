@@ -59,7 +59,8 @@ jobs:
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           HMAC_SECRETS_JSON: ${{ secrets.HMAC_SECRETS_JSON }}
           DASHBOARD_HEALTH_TOKEN: ${{ secrets.DASHBOARD_HEALTH_TOKEN }}
-          HEALTH_TOKEN: ${{ secrets.HEALTH_TOKEN }}
+          EIFLOW_ENV: production
+          BOT_HEALTH_TOKENS_JSON: ${{ secrets.BOT_HEALTH_TOKENS_JSON }}
           SMOKE_BOT_ID: ${{ vars.SMOKE_BOT_ID }}
           SHANKS_URL: ${{ vars.SHANKS_URL }}
           SANJI_URL: ${{ vars.SANJI_URL }}

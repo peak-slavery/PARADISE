@@ -1,4 +1,4 @@
-import { MongoClient, type Collection, type Db } from 'mongodb';
+import { MongoClient, type ClientSession, type Collection, type Db } from 'mongodb';
 import {
   MONGO_INDEXES,
   secondaryMongoIndexes,
@@ -185,6 +185,7 @@ export interface CardTradeDoc {
   created_at: Date;
   accepted_at: Date | null;
   cancelled_at: Date | null;
+  expired_at?: Date | null;
   /** Monotonic version used by compare-and-swap transitions. */
   version: number;
 }
@@ -200,6 +201,8 @@ export interface CardAcquisitionDoc {
   base_value: number;
   /** Berries credited/debited for this acquisition; can be zero. */
   berries_delta: number;
+  /** Domain operation that created this audit row, when available. */
+  operation_id?: string;
   acquired_at: Date;
 }
 
@@ -220,7 +223,74 @@ export interface CardTransactionDoc {
     | 'daily_reward'
     | 'event_reward';
   reference_id: string | null;
+  /** Stable operation id used to make retries and reconciliation idempotent. */
+  operation_id?: string;
   created_at: Date;
+}
+
+export type CardOutboxStatus = 'pending' | 'processing' | 'published';
+
+export interface CardOutboxEvent {
+  event_id: string;
+  guild_id: string;
+  aggregate_type: 'card_instance' | 'card_trade' | 'card_pack' | 'card_player';
+  aggregate_id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  status: CardOutboxStatus;
+  available_at: Date;
+  attempts: number;
+  created_at: Date;
+  updated_at: Date;
+  last_error?: string;
+  published_at?: Date;
+}
+
+export type CardOperationKind =
+  | 'pack_open'
+  | 'sell'
+  | 'trade_create'
+  | 'trade_cancel'
+  | 'trade_accept'
+  | 'trade_expire';
+
+export interface CardOperationRecord {
+  operation_id: string;
+  guild_id: string;
+  actor_user_id: string;
+  kind: CardOperationKind;
+  status: 'pending' | 'completed' | 'failed';
+  result?: unknown;
+  error_code?: string;
+  /** Full command fingerprint used to reject replay with changed arguments. */
+  request_hash?: string;
+  created_at: Date;
+  updated_at: Date;
+  completed_at: Date | null;
+}
+
+export interface CommandIdempotencyRecord {
+  command_key: string;
+  bot_id: string;
+  guild_id: string;
+  user_id: string;
+  command_name: string;
+  status: 'in_progress' | 'completed' | 'failed';
+  result?: unknown;
+  error_code?: string;
+  request_hash?: string;
+  created_at: Date;
+  updated_at: Date;
+  completed_at: Date | null;
+}
+
+export interface CardPackAccessPolicy {
+  pack_id: string;
+  access_mode: 'public' | 'owner_only' | 'disabled';
+  allowed_user_ids: string[];
+  allowed_role_ids: string[];
+  active: boolean;
+  updated_at: Date;
 }
 
 export interface MongoCollections {
@@ -236,12 +306,18 @@ export interface MongoCollections {
   card_trades: Collection<CardTradeDoc>;
   card_acquisitions: Collection<CardAcquisitionDoc>;
   card_transactions: Collection<CardTransactionDoc>;
+  card_operations: Collection<CardOperationRecord>;
+  command_idempotency: Collection<CommandIdempotencyRecord>;
+  card_outbox: Collection<CardOutboxEvent>;
+  card_pack_access: Collection<CardPackAccessPolicy>;
 }
 
 export interface MongoHandle {
   client: MongoClient;
   db: Db;
   collections: MongoCollections;
+  /** Transaction-capable client session for one operation. */
+  transactionSession(): ClientSession;
 }
 
 /**
@@ -280,6 +356,10 @@ export function buildCollections(db: Db): MongoCollections {
     card_trades: db.collection<CardTradeDoc>('card_trades'),
     card_acquisitions: db.collection<CardAcquisitionDoc>('card_acquisitions'),
     card_transactions: db.collection<CardTransactionDoc>('card_transactions'),
+    card_operations: db.collection<CardOperationRecord>('card_operations'),
+    command_idempotency: db.collection<CommandIdempotencyRecord>('command_idempotency'),
+    card_outbox: db.collection<CardOutboxEvent>('card_outbox'),
+    card_pack_access: db.collection<CardPackAccessPolicy>('card_pack_access'),
   };
 }
 
@@ -338,7 +418,12 @@ export async function connectMongo(env: Env, log: Logger): Promise<MongoHandle |
       return null;
     }
     log.info({ db: env.mongodbDb }, 'mongodb connected');
-    return { client, db, collections };
+    return {
+      client,
+      db,
+      collections,
+      transactionSession: () => client.startSession(),
+    };
   }
 
   await client.close().catch(() => undefined);
@@ -391,7 +476,12 @@ export async function connectSecondaryMongo(env: Env, log: Logger): Promise<Mong
       return null;
     }
     log.info({ db: env.mongodbSecondaryDb }, 'secondary mongodb audit sink connected');
-    return { client, db, collections };
+    return {
+      client,
+      db,
+      collections,
+      transactionSession: () => client.startSession(),
+    };
   }
 
   await client.close().catch(() => undefined);

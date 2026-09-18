@@ -5,10 +5,13 @@
  * Run against a deployed dashboard and its eight Render bot services. All
  * credentials must come from environment variables; values are never printed.
  */
-import { createHmac } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { MongoClient } from 'mongodb';
 import { createClient } from '@supabase/supabase-js';
+import { signRequestWithContext } from '../packages/shared/src/hmac.ts';
+import { APPROVED_PRODUCTION_GUILD_ID } from './canonical-config.mjs';
 import { botIds, BOT_META } from './fleet.mjs';
+import { probeBotReadiness, validateTokenMap } from './watchdog-core.mjs';
 
 const requiredString = (name) => {
   const value = process.env[name]?.trim();
@@ -25,7 +28,8 @@ const requiredEnvironment = [
   'UPSTASH_REDIS_REST_TOKEN',
   'HMAC_SECRETS_JSON',
   'DASHBOARD_HEALTH_TOKEN',
-  'HEALTH_TOKEN',
+  'EIFLOW_ENV',
+  'BOT_HEALTH_TOKENS_JSON',
   'SMOKE_BOT_ID',
   'SHANKS_URL',
   'SANJI_URL',
@@ -159,40 +163,41 @@ await check('redis rate-limit path', async (pass) => {
 
 await check('hmac tampering and cross-bot rejection', async (pass) => {
   const secrets = JSON.parse(requiredString('HMAC_SECRETS_JSON'));
-  if (!secrets || typeof secrets !== 'object' || Array.isArray(secrets)) {
-    throw new Error('HMAC_SECRETS_JSON must be an object');
-  }
-  const expectedBotIds = [
-    'shanks', 'sanji', 'zoro', 'boahancock',
-    'nami', 'luffy', 'niko-robin', 'cyrene',
-  ];
-  const invalidBotIds = expectedBotIds.filter((id) =>
-    typeof secrets[id] !== 'string' || secrets[id].length < 32,
-  );
-  if (invalidBotIds.length > 0) {
-    throw new Error(`HMAC_SECRETS_JSON has missing or weak secrets for: ${invalidBotIds.join(', ')}`);
-  }
-  const uniqueSecrets = new Set(expectedBotIds.map((id) => secrets[id]));
-  if (uniqueSecrets.size !== expectedBotIds.length) {
+  const expectedBotIds = botIds();
+  const tokenMap = validateTokenMap(secrets, expectedBotIds);
+  const isStrongHmacSecret = (value) => /^[a-f0-9]{64}$/i.test(value) || /^[A-Za-z0-9+/=_-]{43,}$/.test(value);
+  const weakBotIds = expectedBotIds.filter((id) => !isStrongHmacSecret(tokenMap[id]));
+  if (weakBotIds.length) throw new Error(`HMAC_SECRETS_JSON has weak secrets for: ${weakBotIds.join(', ')}`);
+  if (new Set(expectedBotIds.map((id) => tokenMap[id])).size !== expectedBotIds.length) {
     throw new Error('HMAC_SECRETS_JSON must contain unique secrets for every bot');
   }
-
   const botId = requiredString('SMOKE_BOT_ID');
   if (!expectedBotIds.includes(botId)) throw new Error(`unknown SMOKE_BOT_ID: ${botId}`);
-  const secret = secrets[botId];
+  const secret = tokenMap[botId];
   const otherBotId = expectedBotIds.find((id) => id !== botId);
+  const route = '/api/internal/config';
   const send = async (
     payload,
     signatureSecret = secret,
     timestamp = Math.floor(Date.now() / 1000),
     rawBody = JSON.stringify(payload),
   ) => {
-    const signedBody = JSON.stringify(payload);
-    const signature = createHmac('sha256', signatureSecret).update(`${timestamp}.${signedBody}`).digest('hex');
-    return fetch(new URL('/api/internal/config', dashboardUrl), {
+    const signature = signRequestWithContext(signatureSecret, rawBody, {
+      method: 'POST',
+      route,
+      botId,
+      requestId: String(payload.request_id),
+      guildId: payload.guild_id,
+    }, timestamp);
+    return fetch(new URL(route, dashboardUrl), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'x-pe-method': 'POST',
+        'x-pe-route': route,
+        'x-pe-bot-id': botId,
+        'x-pe-request-id': String(payload.request_id),
+        'x-pe-guild-id': String(payload.guild_id),
         'x-pe-timestamp': String(timestamp),
         'x-pe-signature': signature,
       },
@@ -201,40 +206,40 @@ await check('hmac tampering and cross-bot rejection', async (pass) => {
     });
   };
 
-  const basePayload = { bot_id: botId, guild_id: '123456789012345678', request_id: 'smoke-hmac-test' };
+  const basePayload = {
+    bot_id: botId,
+    guild_id: APPROVED_PRODUCTION_GUILD_ID,
+    request_id: `smoke-hmac-${randomUUID().replace(/-/g, '')}`,
+    config: {},
+  };
   const stale = await send(basePayload, secret, Math.floor(Date.now() / 1000) - 600);
   if (stale.status !== 401) throw new Error(`stale request returned HTTP ${stale.status}`);
 
-  const tamperedPayload = { ...basePayload, request_id: 'smoke-hmac-tampered' };
-  const tampered = await send(basePayload, secret, undefined, JSON.stringify(tamperedPayload));
+  const tamperedPayload = { ...basePayload, request_id: `smoke-hmac-${randomUUID().replace(/-/g, '')}` };
+  const tamperedRawBody = JSON.stringify(tamperedPayload);
+  const tampered = await send(basePayload, secret, undefined, tamperedRawBody);
   if (tampered.status !== 401) throw new Error(`tampered body returned HTTP ${tampered.status}`);
 
-  const wrongBot = await send(basePayload, secrets[otherBotId]);
+  const wrongBot = await send(basePayload, tokenMap[otherBotId]);
   if (wrongBot.status !== 401) throw new Error(`cross-bot secret returned HTTP ${wrongBot.status}`);
 
-  pass('complete HMAC map, stale, tampered, and cross-bot requests rejected');
+  pass('complete HMAC map, canonical guild binding, stale, tampered, and cross-bot requests rejected');
 });
 
 const bots = botIds().map((id) => [id, BOT_META[id].service]);
 const botUrls = Object.fromEntries(
   bots.map(([id]) => [id, process.env[`${id.toUpperCase().replace(/-/g, '_')}_URL`]]),
 );
+const healthTokens = validateTokenMap(JSON.parse(requiredString('BOT_HEALTH_TOKENS_JSON')), botIds());
+const weakHealthBotIds = botIds().filter((id) => healthTokens[id].length < 32);
+if (weakHealthBotIds.length) throw new Error(`BOT_HEALTH_TOKENS_JSON has weak tokens for: ${weakHealthBotIds.join(', ')}`);
 for (const [botId, botName] of bots) {
   await check(`bot health: ${botName}`, async (pass) => {
     const base = botUrls[botId];
     if (!base) throw new Error(`missing ${botId.toUpperCase().replace(/-/g, '_')}_URL`);
-    const response = await fetch(new URL('/health', base), {
-      headers: { authorization: `Bearer ${process.env.HEALTH_TOKEN}` },
-      signal: timeout(),
-    });
-    if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
-    const payload = await response.json();
-    if (payload.status !== 'ok') throw new Error(`status ${payload.status ?? 'unknown'}`);
-    const connections = payload.db_connections ?? {};
-    for (const dependency of ['supabase', 'mongo', 'redis']) {
-      if (connections[dependency] !== true) throw new Error(`${dependency} unavailable`);
-    }
-    pass('process, auth, and backing dependencies ready');
+    const result = await probeBotReadiness(botId, healthTokens[botId], base);
+    if (!result.ok) throw new Error(`${result.stage}: ${result.classification}`);
+    pass('process, auth, Gateway, guild lock, and backing dependencies ready');
   });
 }
 

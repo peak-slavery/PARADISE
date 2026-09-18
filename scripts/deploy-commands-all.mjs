@@ -5,9 +5,12 @@
  * credentials are never persisted anywhere new and never printed.
  *
  * Usage:
- *   node scripts/deploy-commands-all.mjs            # global (up to 1h propagate)
- *   node scripts/deploy-commands-all.mjs <botId>    # one bot only
- *   node scripts/deploy-commands-all.mjs --guild    # dev guild instant scope
+ *   node scripts/deploy-commands-all.mjs            # global registration
+ *   node scripts/deploy-commands-all.mjs <botId>    # one bot, global registration
+ *
+ * Guild registration targets are not configurable. Public commands register
+ * globally; development-only commands use the canonical development guild when
+ * EIFLOW_ENV=development. The canonical main guild is cleared of stale copies.
  *
  * Reuses each bot's own scripts/deploy-commands.ts via tsx, so per-bot command
  * modules and the shared registerCommands() path stay identical to production.
@@ -17,9 +20,30 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBotChildEnv } from './bot-env.mjs';
+import {
+  APPROVED_DEVELOPMENT_GUILD_ID,
+  APPROVED_PRODUCTION_GUILD_ID,
+  canonicalId,
+  canonicalIdsFrom,
+  canonicalRuntimeEnvironment,
+} from './canonical-config.mjs';
 import { resolveCredential } from './credential-keys.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const BOTS = ['shanks', 'sanji', 'zoro', 'boahancock', 'nami', 'luffy', 'niko-robin', 'cyrene'];
+const args = process.argv.slice(2);
+if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
+  console.log('usage: node scripts/deploy-commands-all.mjs [botId]');
+  console.log('  Registers public commands globally and canonical development-only commands in development mode.');
+  console.log('  Guild registration targets are not configurable.');
+  process.exit(0);
+}
+if (args.length > 1 || args.some((arg) => arg.startsWith('--'))) {
+  throw new Error('Guild registration targets are not configurable; commands register globally and use canonical development/main guild IDs only');
+}
+const only = args[0];
+if (only && !BOTS.includes(only)) throw new Error('Unknown bot id');
+
 const raw = readFileSync(path.join(ROOT, 'temp cred.txt'), 'utf8');
 
 function section(headerRe) {
@@ -39,8 +63,8 @@ const credential = (name, descriptive) => resolveCredential({
   environment: process.env[name],
   descriptive,
 });
+const canonical = canonicalIdsFrom(raw);
 
-const BOTS = ['shanks', 'sanji', 'zoro', 'boahancock', 'nami', 'luffy', 'niko-robin', 'cyrene'];
 const HEADERS = {
   'niko-robin': 'Niko Robin',
   boahancock: 'Boa hancock',
@@ -62,11 +86,11 @@ function buildEnv(botId) {
     DISCORD_CLIENT_ID: clientId,
     BOT_ID: botId,
     BOT_NAME: HEADERS[botId],
-    // Guild IDs are REQUIRED for global deploys: registerCommands() clears
-    // dev/main guild scopes so commands never exist in two scopes at once
-    // (the source of the "double slash commands" reports).
-    DEV_GUILD_ID: field(raw, 'DEV_GUILD_ID') ?? raw.match(/^#dev server=(\d+)/m)?.[1] ?? '',
-    MAIN_GUILD_ID: field(raw, 'MAIN_GUILD_ID') ?? raw.match(/^#main server=(\d+)/m)?.[1] ?? '',
+    // These canonical IDs let registerCommands() clear stale guild scopes while
+    // refusing any caller-supplied guild registration target.
+    EIFLOW_ENV: canonicalRuntimeEnvironment(process.env.EIFLOW_ENV),
+    DEV_GUILD_ID: canonical.devGuildId,
+    MAIN_GUILD_ID: canonical.mainGuildId,
     MONGODB_DB: 'eiflow',
     LOG_LEVEL: 'error',
     ...(botId === 'cyrene' && {
@@ -87,27 +111,24 @@ function buildEnv(botId) {
   return createBotChildEnv(process.env, own);
 }
 
-const only = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
-const guildScope = process.argv.includes('--guild');
-if (only && !BOTS.includes(only)) throw new Error('Unknown bot id');
-const devGuild = raw.match(/^#dev server=(\d+)/m)?.[1];
-if (guildScope && !devGuild) throw new Error('cred file: #dev server id missing for --guild scope');
+canonicalId('DEV_GUILD_ID', canonical.devGuildId, APPROVED_DEVELOPMENT_GUILD_ID);
+canonicalId('MAIN_GUILD_ID', canonical.mainGuildId, APPROVED_PRODUCTION_GUILD_ID);
 
 let failed = 0;
 for (const botId of BOTS) {
   if (only && botId !== only) continue;
   try {
-  const env = buildEnv(botId);
-  const args = ['node_modules/tsx/dist/cli.mjs', `bots/${botId}/scripts/deploy-commands.ts`];
-  if (guildScope) args.push(devGuild);
-  console.log(`→ ${botId}: registering ${guildScope ? `to dev guild ${devGuild}` : 'globally'}…`);
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, env, encoding: 'utf8' });
-  const out = (r.stdout + r.stderr).trim();
-  console.log(out ? `  ${out.replace(/\n/g, '\n  ')}` : '  (no output)');
-  if (r.status !== 0) {
-    failed += 1;
-    console.log(`  ✗ ${botId} FAILED (exit ${r.status})`);
-  }
+    const env = buildEnv(botId);
+    const argsToRun = ['node_modules/tsx/dist/cli.mjs', `bots/${botId}/scripts/deploy-commands.ts`];
+    console.log(`→ ${botId}: registering public commands globally...`);
+    const r = spawnSync(process.execPath, argsToRun, { cwd: ROOT, env, encoding: 'utf8' });
+
+    const out = (r.stdout + r.stderr).trim();
+    console.log(out ? `  ${out.replace(/\n/g, '\n  ')}` : '  (no output)');
+    if (r.status !== 0) {
+      failed += 1;
+      console.log(`  ✗ ${botId} FAILED (exit ${r.status})`);
+    }
   } catch {
     failed += 1;
     console.error(`  ${botId}: registration failed; check its local credentials`);

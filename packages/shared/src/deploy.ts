@@ -1,5 +1,6 @@
 import { REST, Routes, type RESTPostAPIApplicationCommandsJSONBody } from 'discord.js';
-import { loadDeployEnv } from './env.js';
+import { loadDeployEnv, validateCanonicalDeployConfig } from './env.js';
+import { isApprovedGuild } from './guild-policy.js';
 import { loadAllCommandModules } from './commands.js';
 
 export interface DeployResult {
@@ -19,6 +20,11 @@ export interface DeployResult {
  */
 export async function registerCommands(dirs: string[], guildId?: string): Promise<DeployResult> {
   const env = loadDeployEnv();
+  validateCanonicalDeployConfig(env);
+
+  if (guildId && (!isApprovedGuild(guildId, env) || guildId !== env.devGuildId)) {
+    throw new Error(`Explicit command guild must be the canonical development guild ${env.devGuildId} for ${env.runtimeEnvironment}`);
+  }
 
   const seen = new Set<string>();
   const modules = (
@@ -66,14 +72,16 @@ export async function registerCommands(dirs: string[], guildId?: string): Promis
   }
 
   const clearedGuilds: string[] = [];
-  if (env.devGuildId) {
-    const devRoute = Routes.applicationGuildCommands(env.discordClientId, env.devGuildId);
-    await rest.put(devRoute, { body: devBody });
-    const devRegistered = await rest.get(devRoute) as { name: string; type: number }[];
-    const devNames = new Set(devRegistered.filter((command) => command.type === 1).map((command) => command.name));
-    if (devNames.size !== devBody.length) throw new Error(`Dev-guild command verification failed for ${env.botId}`);
-  } else if (devBody.length) {
-    console.warn(`[${env.botId}] ${devBody.length} dev-only command(s) not registered: DEV_GUILD_ID is not set`);
+  if (env.runtimeEnvironment === 'development') {
+    if (env.devGuildId) {
+      const devRoute = Routes.applicationGuildCommands(env.discordClientId, env.devGuildId);
+      await rest.put(devRoute, { body: devBody });
+      const devRegistered = await rest.get(devRoute) as { name: string; type: number }[];
+      const devNames = new Set(devRegistered.filter((command) => command.type === 1).map((command) => command.name));
+      if (devNames.size !== devBody.length) throw new Error(`Dev-guild command verification failed for ${env.botId}`);
+    } else if (devBody.length) {
+      console.warn(`[${env.botId}] ${devBody.length} dev-only command(s) not registered: DEV_GUILD_ID is not set`);
+    }
   }
 
   if (env.mainGuildId) {
@@ -87,7 +95,7 @@ export async function registerCommands(dirs: string[], guildId?: string): Promis
 
   return {
     botId: env.botId,
-    count: publicBody.length + (env.devGuildId ? devBody.length : 0),
+    count: publicBody.length + (env.runtimeEnvironment === 'development' ? devBody.length : 0),
     scope: 'global',
     ...(clearedGuilds.length ? { clearedGuilds } : {}),
   };

@@ -55,6 +55,7 @@ export function assertDashboardProductionEnvironment(): void {
     'SECRET_VAULT_MASTER_KEY',
     'SECRET_VAULT_SALT',
     'HMAC_SECRETS_JSON',
+    'EIFLOW_ENV',
     'NEXT_PUBLIC_SITE_URL',
     'DASHBOARD_URL',
   ];

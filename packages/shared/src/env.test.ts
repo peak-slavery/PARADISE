@@ -16,6 +16,9 @@ describe('deploy environment', () => {
       botId: 'niko-robin',
       discordToken: 'discord-token',
       discordClientId: TEST_DISCORD_ID_A,
+      runtimeEnvironment: 'production',
+      devGuildId: '1444582621417046071',
+      mainGuildId: '848841415940898827',
     });
   });
 

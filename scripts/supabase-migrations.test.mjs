@@ -52,8 +52,8 @@ test('migration runner records an immutable checksum', () => {
 });
 
 test('production monitor uses the dashboard API health route', () => {
-  assert.match(monitor, /new URL\('\/api\/health', baseUrl\)/);
-  assert.match(monitor, /new URL\('\/health', baseUrl\)/);
+  assert.match(monitor, /new URL\('\/api\/health', required\('DASHBOARD_URL'\)\)/);
+  assert.match(monitor, /runWatchdog\(\{ tokens, statePath, auditPath, summaryPath \}\)/);
 });
 
 test('rollback drill records checksums for forward migrations', () => {

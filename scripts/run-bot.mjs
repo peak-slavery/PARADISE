@@ -15,6 +15,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBotChildEnv } from './bot-env.mjs';
 import { resolveCredential } from './credential-keys.mjs';
+import {
+  APPROVED_DEVELOPMENT_GUILD_ID,
+  APPROVED_PRODUCTION_GUILD_ID,
+  MASTER_OPERATOR_DISCORD_ID,
+  canonicalId,
+  canonicalIdsFrom,
+  canonicalRuntimeEnvironment,
+  canonicalSnowflake,
+} from './canonical-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const raw = readFileSync(path.join(ROOT, 'temp cred.txt'), 'utf8');
@@ -37,10 +46,10 @@ const credential = (name, descriptive) => resolveCredential({
   environment: process.env[name],
   descriptive,
 });
-const grab = (re) => raw.match(re)?.[1] ?? '';
 
 const BOT_IDS = ['shanks','sanji','zoro','boahancock','nami','luffy','niko-robin','cyrene'];
 const PORT_BASE = 3100; // shanks=3101 ... cyrene=3108
+const canonical = canonicalIdsFrom(raw);
 
 function botSection(botId) {
   const headers = {
@@ -82,12 +91,13 @@ function buildEnv(botId, port) {
     DISCORD_CLIENT_ID: vals.clientId,
     HMAC_SECRET: vals.hmac,
     HEALTH_TOKEN: vals.healthToken,
-    OWNER_IDS: raw.match(/^#master id=(\d+)/m)?.[1] ?? '',
-    MASTER_DISCORD_ID: raw.match(/^#master id=(\d+)/m)?.[1] ?? '',
-    DASHBOARD_URL: 'https://ei-point-dashboard.vercel.app',
-    DEV_GUILD_ID: raw.match(/^#dev server=(\d+)/m)?.[1] ?? '',
-    MAIN_GUILD_ID: raw.match(/^#main server=(\d+)/m)?.[1] ?? '',
-    DEV_AUTH_CHANNEL_ID: raw.match(/^#auth channel=(\d+)/m)?.[1] ?? '',
+    OWNER_IDS: process.env.OWNER_IDS || '',
+    MASTER_DISCORD_ID: canonical.masterDiscordId,
+    DASHBOARD_URL: process.env.DASHBOARD_URL || 'https://ei-point-dashboard.vercel.app',
+    EIFLOW_ENV: canonicalRuntimeEnvironment(process.env.EIFLOW_ENV),
+    DEV_GUILD_ID: canonical.devGuildId,
+    MAIN_GUILD_ID: canonical.mainGuildId,
+    DEV_AUTH_CHANNEL_ID: canonical.devAuthChannelId,
     MONGODB_URI: field(MONGO_PRIMARY, 'connection string'),
     MONGODB_DB: 'eiflow',
     MONGODB_SECONDARY_URI: field(MONGO_SECONDARY, 'connection string'),
@@ -136,7 +146,11 @@ function buildEnv(botId, port) {
     // crashes into a visible restart instead of eating the whole machine.
     NODE_OPTIONS: '--max-old-space-size=384',
   };
-  const requiredEnv = ['BOT_ID', 'BOT_NAME', 'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'HMAC_SECRET', 'HEALTH_TOKEN'];
+  canonicalId('MASTER_DISCORD_ID', own.MASTER_DISCORD_ID, MASTER_OPERATOR_DISCORD_ID);
+  canonicalId('DEV_GUILD_ID', own.DEV_GUILD_ID, APPROVED_DEVELOPMENT_GUILD_ID);
+  canonicalId('MAIN_GUILD_ID', own.MAIN_GUILD_ID, APPROVED_PRODUCTION_GUILD_ID);
+  canonicalSnowflake('DEV_AUTH_CHANNEL_ID', own.DEV_AUTH_CHANNEL_ID);
+  const requiredEnv = ['BOT_ID', 'BOT_NAME', 'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'HMAC_SECRET', 'HEALTH_TOKEN', 'EIFLOW_ENV'];
   const missing = requiredEnv.filter((k) => !own[k]);
   if (missing.length) throw new Error(`empty required env values: ${missing.join(', ')}`);
   return createBotChildEnv(process.env, own);

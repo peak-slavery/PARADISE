@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Events, GatewayIntentBits } from 'discord.js';
-import { createBot, isBotOperational, readBotConfig, sendChannelEmbed } from '@eiflow/shared';
+import { createBot, createGuildEventGate, readBotConfig, sendChannelEmbed } from '@eiflow/shared';
 import { classifyText, slmEnabled } from './lib/slm.js';
 import { DEFAULT_CONFIG } from './lib/store.js';
 
@@ -21,16 +21,15 @@ await createBot({
   unlimitedCommands: ['userinfo', 'serverinfo', 'about', 'help'],
 
   setup: async ({ client, services, log }) => {
+    const listen = createGuildEventGate(client, services);
     /**
      * Discord AutoMod executes rules server-side; all this bot does is mirror
      * the outcome into the configured channel and the batched log stream.
      */
-    client.on(Events.AutoModerationActionExecution, async (execution) => {
+    listen(Events.AutoModerationActionExecution, async (execution) => {
       try {
         // AutoModerationActionExecution exposes `guild`, not `guildId`.
         const guildId = execution.guild.id;
-        if (!(await services.isAuthorized(guildId))) return;
-        if (!isBotOperational(await services.getControlState(guildId))) return;
 
         const config = await readBotConfig(
           services.supabase,

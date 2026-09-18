@@ -73,14 +73,10 @@ export class LazyCommandRunner {
 
   /**
    * Resolves a command's access scope without executing it. Unknown commands
-   * and load failures resolve to public — the execute path owns those errors.
+   * and load failures fail closed so an operator control cannot become public.
    */
   async accessFor(name: string): Promise<'public' | 'dev'> {
-    try {
-      return (await this.load(name)).access ?? 'public';
-    } catch {
-      return 'public';
-    }
+    return (await this.load(name)).access ?? 'public';
   }
 
   get loaded(): string[] {

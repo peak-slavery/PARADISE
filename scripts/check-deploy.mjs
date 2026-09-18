@@ -76,7 +76,7 @@ try {
   const requiredShared = [
     'NODE_OPTIONS', 'BOT_VERSION', 'OWNER_IDS', 'MONGODB_DB',
     'MONGODB_SECONDARY_DB', 'LOG_LEVEL', 'REDIS_DAILY_COMMAND_BUDGET',
-    'DASHBOARD_URL', 'DEV_GUILD_ID', 'MAIN_GUILD_ID', 'DEV_AUTH_CHANNEL_ID',
+    'DASHBOARD_URL', 'DEV_GUILD_ID', 'MAIN_GUILD_ID', 'DEV_AUTH_CHANNEL_ID', 'EIFLOW_ENV',
     'HEALTH_TOKEN', 'SENTRY_DSN',
   ];
   for (let i = 0; i < serviceStarts.length; i += 1) {
@@ -163,6 +163,40 @@ try {
   } else {
     ok('dashboard health route is protected and readiness-aware');
   }
+
+  const watchdog = read('scripts/watchdog-core.mjs');
+  const watchdogNode = read('scripts/watchdog.mjs');
+  const watchdogWorkflow = read('.github/workflows/production-monitor.yml');
+  const watchdogContractErrors = [];
+  for (const [label, source, patterns] of [
+    ['watchdog readiness contract', watchdog, [
+      /gateway_ready !== true/,
+      /guild_lock_ready !== true/,
+      /for \(const dependency of \['supabase', 'mongo', 'redis'\]\)/,
+      /const MAX_MISSES = 3/,
+      /recovery_action_triggered/,
+    ]],
+    ['watchdog persistence contract', watchdogNode, [
+      /BOT_HEALTH_TOKENS_JSON/,
+      /readState\(statePath\)/,
+      /writeJsonAtomic\(statePath, nextState\)/,
+      /writeJsonAtomic\(auditPath, audit\)/,
+    ]],
+    ['watchdog workflow contract', watchdogWorkflow, [
+      /cron: '\*\/5 \* \* \* \*'/,
+      /cancel-in-progress: false/,
+      /actions\/cache\/restore@v4/,
+      /actions\/cache\/save@v4/,
+      /BOT_HEALTH_TOKENS_JSON: \$\{\{ secrets\.BOT_HEALTH_TOKENS_JSON \}\}/,
+      /actions\/upload-artifact@v4/,
+    ]],
+  ]) {
+    const missing = patterns.filter((pattern) => !pattern.test(source)).map((pattern) => pattern.source);
+    if (missing.length) watchdogContractErrors.push(`${label} missing ${missing.join(', ')}`);
+  }
+  if (watchdogContractErrors.length === 0) {
+    ok('watchdog uses five-minute serialized probes, durable redacted state, exact readiness signals, and third-miss recovery tracking');
+  } else for (const message of watchdogContractErrors) bad(message);
 
   const migrationRunner = read('scripts/apply-supabase-migrations.mjs');
   const migrationFiles = list('infra/supabase/migrations')
@@ -361,16 +395,25 @@ try {
 
 // Card-registry CI wiring: the scanner gate alone would not catch a runtime
 // catalog that disagrees with the committed manifest, so both steps must exist.
-try {
-  const ci = read('.github/workflows/ci.yml');
-  if (!/cards:check -w @eiflow\/bot-luffy/.test(ci)) {
-    bad('CI does not run the card registry scanner gate');
-  } else if (!/smoke:luffy/.test(ci)) {
-    bad('CI does not run the Luffy card smoke test (manifest/catalog/probability parity)');
-  } else {
-    ok('CI runs both card registry validation and the Luffy card smoke test');
-  }
-} catch (e) { bad(`ci.yml: ${e.message}`); }
+  try {
+    const ci = read('.github/workflows/ci.yml');
+    const release = read('.github/workflows/release.yml');
+    const smokeContractErrors = [];
+    for (const [label, source] of [['ci.yml', ci], ['release.yml', release]]) {
+      if (!/npm run smoke:production/.test(source)) smokeContractErrors.push(`${label} does not run production smoke`);
+      if (!/BOT_HEALTH_TOKENS_JSON: \$\{\{ secrets\.BOT_HEALTH_TOKENS_JSON \}\}/.test(source)) smokeContractErrors.push(`${label} does not bind per-bot health tokens`);
+      if (!/EIFLOW_ENV: production/.test(source)) smokeContractErrors.push(`${label} does not pin production smoke to the production guild policy`);
+      if (/HEALTH_TOKEN: \$\{\{ secrets\.HEALTH_TOKEN \}\}/.test(source)) smokeContractErrors.push(`${label} still uses the shared health token`);
+    }
+    if (!/cards:check -w @eiflow\/bot-luffy/.test(ci)) {
+      smokeContractErrors.push('ci.yml does not run the card registry scanner gate');
+    } else if (!/smoke:luffy/.test(ci)) {
+      smokeContractErrors.push('ci.yml does not run the Luffy card smoke test (manifest/catalog/probability parity)');
+    }
+    if (smokeContractErrors.length === 0) {
+      ok('CI and release production smoke use per-bot health tokens and retain card registry checks');
+    } else for (const message of smokeContractErrors) bad(message);
+  } catch (e) { bad(`GitHub workflow smoke contract: ${e.message}`); }
 
 // ---------------------------------------------------------------------------
 console.log('\x1b[1m[4/5] shared runtime\x1b[0m');

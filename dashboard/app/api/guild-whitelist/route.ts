@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { authorizationResponse, boundedJson } from '@/lib/api-response';
+import { isApprovedGuild } from '@eiflow/shared';
+
 import { authorizeMaster } from '@/lib/authz';
 import { invalidateWhitelistCache } from '@/lib/interlink';
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
@@ -9,7 +11,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function fixedGuild(guildId: string): boolean {
-  return guildId === process.env.DEV_GUILD_ID?.trim() || guildId === process.env.MAIN_GUILD_ID?.trim();
+  return isApprovedGuild(guildId, process.env.EIFLOW_ENV);
 }
 
 export async function GET() {

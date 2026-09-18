@@ -1,28 +1,46 @@
-name: Production monitor
+name: Production watchdog
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
+
+concurrency:
+  group: production-watchdog-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: production-monitor
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - run: npm run monitor:production
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Restore watchdog state
+        uses: actions/cache/restore@v4
+        with:
+          path: .watchdog-state
+          key: watchdog-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            watchdog-state-${{ runner.os }}-${{ github.ref_name }}-
+      - name: Probe dashboard and bot readiness
+        run: npm run monitor:production
         env:
           DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
           DASHBOARD_HEALTH_TOKEN: ${{ secrets.DASHBOARD_HEALTH_TOKEN }}
-          HEALTH_TOKEN: ${{ secrets.HEALTH_TOKEN }}
+          BOT_HEALTH_TOKENS_JSON: ${{ secrets.BOT_HEALTH_TOKENS_JSON }}
           SHANKS_URL: ${{ vars.SHANKS_URL }}
           SANJI_URL: ${{ vars.SANJI_URL }}
           ZORO_URL: ${{ vars.ZORO_URL }}
@@ -31,3 +49,31 @@ jobs:
           LUFFY_URL: ${{ vars.LUFFY_URL }}
           NIKO_ROBIN_URL: ${{ vars.NIKO_ROBIN_URL }}
           CYRENE_URL: ${{ vars.CYRENE_URL }}
+      - name: Save watchdog state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .watchdog-state
+          key: watchdog-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          retention-days: 30
+      - name: Upload redacted watchdog evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: watchdog-redacted-${{ github.run_id }}
+          path: |
+            .watchdog-state/state.json
+            .watchdog-state/audit.json
+            .watchdog-state/summary.md
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+      - name: Append watchdog summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f .watchdog-state/summary.md ]]; then
+            cat .watchdog-state/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '\n## Ei Flow watchdog\n\nNo state was produced.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi

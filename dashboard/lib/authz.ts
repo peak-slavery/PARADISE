@@ -8,6 +8,8 @@
 
 import { notFound, redirect } from 'next/navigation';
 
+import { isApprovedGuild } from '@eiflow/shared';
+
 import { getServer } from '@/lib/data/servers';
 import { credentials, demoMode } from '@/lib/demo';
 import { createSupabaseServerClient, getCurrentUser } from '@/lib/supabase/server';
@@ -46,7 +48,7 @@ export type GuildAuthorization =
  * partially configured.
  */
 export async function authorizeGuild(guildId: string): Promise<GuildAuthorization> {
-  if (!isDiscordSnowflake(guildId)) {
+  if (!isDiscordSnowflake(guildId) || !isApprovedGuild(guildId, process.env.EIFLOW_ENV)) {
     return { ok: false, status: 404, error: 'Guild not found' };
   }
 
@@ -74,18 +76,8 @@ export async function authorizeGuild(guildId: string): Promise<GuildAuthorizatio
     const server = await getServer(guildId);
     if (!server || server.authorized !== true) return { ok: false, status: 404, error: 'Guild not found' };
 
-    const fixedGuild = guildId === process.env.DEV_GUILD_ID?.trim() || guildId === process.env.MAIN_GUILD_ID?.trim();
-    if (!fixedGuild) {
-      const { data: whitelist, error: whitelistError } = await supabase
-        .from('guild_whitelists')
-        .select('whitelist_type,expires_at')
-        .eq('guild_id', guildId)
-        .is('removed_at', null)
-        .maybeSingle();
-      if (whitelistError) return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
-      const active = whitelist?.whitelist_type === 'full' ||
-        (whitelist?.whitelist_type === 'temp' && typeof whitelist.expires_at === 'string' && Date.parse(whitelist.expires_at) > Date.now());
-      if (!active) return { ok: false, status: 404, error: 'Guild not found' };
+    if (!isApprovedGuild(guildId, process.env.EIFLOW_ENV)) {
+      return { ok: false, status: 404, error: 'Guild not found' };
     }
   } catch {
     return { ok: false, status: 503, error: 'Dashboard backend is unavailable' };
@@ -118,9 +110,9 @@ export async function authorizeMaster(): Promise<MasterAuthorization> {
 }
 
 export async function authorizeGuildOrMaster(guildId: string): Promise<GuildAuthorization & { master?: boolean }> {
-  if (!isDiscordSnowflake(guildId)) return { ok: false, status: 404, error: 'Guild not found' };
-  const master = await authorizeMaster();
-  if (master.ok) return { ok: true, demo: false, master: true };
+  if (!isDiscordSnowflake(guildId) || !isApprovedGuild(guildId, process.env.EIFLOW_ENV)) {
+    return { ok: false, status: 404, error: 'Guild not found' };
+  }
   const authorization = await authorizeGuild(guildId);
   return authorization.ok ? { ...authorization, master: false } : authorization;
 }

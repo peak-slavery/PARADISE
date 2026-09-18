@@ -1,24 +1,23 @@
 import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  Events,
   AuditLogEvent,
+  Events,
   type Client,
+  type Guild,
 } from 'discord.js';
 import type { TypedSupabase } from './db/supabase.js';
 import type { Logger } from './logger.js';
 import { reportError } from './errors.js';
 import type { Env } from './env.js';
-import { isGuildWhitelisted, isPermanentGuild, resolveGuildAuthorization } from './whitelist.js';
+import { resolveGuildAuthorization } from './whitelist.js';
 import type { Kv } from './redis.js';
 
 export interface ServerLockDeps {
-  env: Env;
+  env: Pick<Env, 'runtimeEnvironment' | 'botId'>;
   log: Logger;
   supabase: TypedSupabase | null;
   kv?: Kv;
+  /** Receives the result of every server-lock reconciliation. */
+  onReady?: (ready: boolean) => void;
   /** Records the event to MongoDB `logs` (batched). */
   record: (doc: {
     action: string;
@@ -29,24 +28,29 @@ export interface ServerLockDeps {
   }) => void;
 }
 
+export interface ServerLockControl {
+  stop: () => void;
+  reconcile: () => Promise<boolean>;
+  isReady: () => boolean;
+}
+
 /**
- * A guild is authorized when a row exists in `servers` with authorized = true.
- * With Supabase unavailable we fail CLOSED: a missing authorization source
- * must never allow a bot to operate in an unverified guild.
+ * Resolve the canonical environment-scoped guild boundary. Database rows and
+ * cache entries can only narrow access; they can never add a guild to the
+ * approved set.
  */
 export async function isGuildAuthorized(
   supabase: TypedSupabase | null,
   guildId: string,
-  env?: Pick<Env, 'devGuildId' | 'mainGuildId'>,
+  env?: Pick<Env, 'runtimeEnvironment'>,
   kv?: Kv,
 ): Promise<boolean> {
-  return isGuildWhitelisted(supabase, guildId, env, kv);
+  return (await resolveGuildAuthorization(supabase, guildId, env, kv)) === 'allowed';
 }
 
 async function upsertServer(
   supabase: TypedSupabase | null,
   guild: { id: string; name: string; ownerId: string; iconURL(): string | null },
-  authorized: boolean,
 ): Promise<void> {
   if (!supabase) return;
   await supabase.from('servers').upsert(
@@ -55,7 +59,7 @@ async function upsertServer(
       name: guild.name,
       icon_url: guild.iconURL(),
       owner_id: guild.ownerId,
-      authorized,
+      authorized: true,
     },
     { onConflict: 'guild_id' },
   );
@@ -105,114 +109,149 @@ async function recordBotInviter(
   }
 }
 
-async function postAuthorizationRequest(
-  client: Client,
-  env: Env,
-  guild: { id: string; name: string; ownerId: string; memberCount: number },
-): Promise<void> {
-  if (!env.devGuildId || !env.devAuthChannelId || guild.id === env.devGuildId) return;
-  const channel = await client.channels.fetch(env.devAuthChannelId).catch(() => null);
-  if (!channel || channel.isDMBased() || !('send' in channel)) return;
-
-  const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
-    .setTitle('Guild authorization request')
-    .setDescription('A bot was invited to a guild that is not currently whitelisted. Review the guild before granting command access.')
-    .addFields(
-      { name: 'Guild', value: `${guild.name}\n\`${guild.id}\``, inline: true },
-      { name: 'Owner', value: `<@${guild.ownerId}>\n\`${guild.ownerId}\``, inline: true },
-      { name: 'Members', value: String(guild.memberCount), inline: true },
-    )
-    .setFooter({ text: 'Only the master operator can approve this request.' })
-    .setTimestamp();
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(`guild-auth:full:${guild.id}`).setLabel('Approve full').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`guild-auth:temp:${guild.id}`).setLabel('Temporary 24h').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`guild-auth:deny:${guild.id}`).setLabel('Deny').setStyle(ButtonStyle.Danger),
-  );
-  await channel.send({ embeds: [embed], components: [row], allowedMentions: { parse: [] } });
-}
-
 /**
- * Server-lock: record new guilds and immediately leave anything that is not
- * explicitly authorized. Fixed dev/main guilds bypass the review flow; all
- * other guilds receive a private review request before the bot leaves. The
- * whitelist approval remains useful for a later invite and is never a reason
- * to keep an unapproved guild connected.
+ * Server-lock: the canonical guild policy is the only membership boundary.
+ * Unapproved guilds are left immediately. Authorization outages and persistence
+ * failures make readiness false until a later reconciliation succeeds.
  */
-export function attachServerLock(client: Client, deps: ServerLockDeps): () => void {
-  const leaveUnauthorized = async (guild: { id: string; name: string; leave(): Promise<unknown> }): Promise<void> => {
-    deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild is not authorized; leaving');
-    await guild.leave();
+export function attachServerLock(client: Client, deps: ServerLockDeps): ServerLockControl {
+  let ready = false;
+  let stopped = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let reconciliation: Promise<boolean> | null = null;
+
+  const publishReady = (value: boolean): void => {
+    ready = value;
+    deps.onReady?.(value);
   };
 
-  const reconcile = async (): Promise<void> => {
-    for (const guild of client.guilds.cache.values()) {
-      try {
-        if (isPermanentGuild(deps.env, guild.id)) {
-          await upsertServer(deps.supabase, guild, true);
-          continue;
-        }
-        const authorization = await resolveGuildAuthorization(deps.supabase, guild.id, deps.env, deps.kv);
-        if (authorization === 'denied') {
-          await leaveUnauthorized(guild);
-        } else if (authorization === 'unavailable') {
-          deps.log.warn({ guildId: guild.id }, 'authorization unavailable; deferring guild leave');
-        }
-      } catch (err) {
-        deps.log.error({ err, guildId: guild.id }, 'guild authorization reconciliation failed');
-      }
+  const leaveUnauthorized = async (
+    guild: { id: string; name: string; memberCount?: number; leave(): Promise<unknown> },
+    reason: 'denied' | 'unavailable',
+  ): Promise<boolean> => {
+    deps.log.warn({ guildId: guild.id, name: guild.name, reason }, 'guild is not authorized; leaving');
+    deps.record({
+      action: reason === 'denied' ? 'SECURITY_UNAUTHORIZED_GUILD' : 'SECURITY_AUTHORIZATION_UNAVAILABLE',
+      level: 'warn',
+      message: `Guild ${guild.name} was rejected by the canonical guild policy`,
+      guildId: guild.id,
+      meta: {
+        reason,
+        guildName: guild.name,
+        ...(guild.memberCount === undefined ? {} : { memberCount: guild.memberCount }),
+      },
+    });
+    try {
+      await guild.leave();
+      return true;
+    } catch (error) {
+      deps.log.error({ err: error, guildId: guild.id }, 'failed to leave unauthorized guild');
+      reportError(error, { botId: deps.env.botId, guildId: guild.id });
+      return false;
     }
   };
 
-  let timer: ReturnType<typeof setInterval> | undefined;
-  let stopped = false;
-  client.once(Events.ClientReady, () => {
-    if (stopped) return;
-    void reconcile();
-    timer = setInterval(() => void reconcile(), 5 * 60_000);
-    timer.unref?.();
-  });
-
-  client.on(Events.GuildCreate, async (guild) => {
-    try {
-      const permanent = isPermanentGuild(deps.env, guild.id);
-      const authorization = permanent
-        ? 'allowed'
-        : await resolveGuildAuthorization(deps.supabase, guild.id, deps.env, deps.kv);
-      const allowed = authorization === 'allowed';
-      await upsertServer(deps.supabase, guild, allowed);
+  const reconcileOnce = async (): Promise<boolean> => {
+    // Authorization outages are still a definitive readiness failure. Iterate
+    // the current guild cache so every unavailable guild is rejected before a
+    // later recovery attempt can make the bot reachable again.
+    let succeeded = Boolean(deps.supabase);
+    for (const guild of client.guilds.cache.values()) {
+      let authorization: Awaited<ReturnType<typeof resolveGuildAuthorization>>;
+      try {
+        authorization = await resolveGuildAuthorization(deps.supabase, guild.id, deps.env, deps.kv);
+      } catch (error) {
+        succeeded = false;
+        deps.log.error({ err: error, guildId: guild.id }, 'guild authorization reconciliation failed');
+        reportError(error, { botId: deps.env.botId, guildId: guild.id });
+        await leaveUnauthorized(guild, 'unavailable');
+        continue;
+      }
 
       if (authorization === 'unavailable') {
-        deps.log.warn({ guildId: guild.id, name: guild.name }, 'authorization unavailable; keeping guild for retry');
-        deps.record({
-          action: 'server_lock.pending',
-          level: 'warn',
-          message: `Guild ${guild.name} is pending authorization storage recovery`,
-          guildId: guild.id,
-          meta: { guildName: guild.name, memberCount: guild.memberCount },
-        });
-        return;
+        succeeded = false;
+        await leaveUnauthorized(guild, 'unavailable');
+        continue;
+      }
+      if (authorization !== 'allowed') {
+        const left = await leaveUnauthorized(guild, 'denied');
+        if (!left) succeeded = false;
+        continue;
       }
 
-      if (authorization === 'denied') {
-        deps.log.warn({ guildId: guild.id, name: guild.name }, 'guild joined pending authorization');
+      try {
+        await upsertServer(deps.supabase, guild);
+        await recordBotInviter(client, deps.supabase, guild.id);
         deps.record({
-          action: 'server_lock.rejected',
-          level: 'warn',
-          message: `Guild ${guild.name} was rejected because it is not authorized`,
+          action: 'server_lock.joined',
+          level: 'info',
+          message: `Joined authorized guild ${guild.name} (${guild.id})`,
           guildId: guild.id,
-          meta: { guildName: guild.name, memberCount: guild.memberCount },
+          meta: { memberCount: guild.memberCount },
         });
-        await postAuthorizationRequest(client, deps.env, guild).catch((err) => {
-          deps.log.warn({ err, guildId: guild.id }, 'unable to post guild authorization request');
+        deps.log.info({ guildId: guild.id, name: guild.name }, 'authorized guild reconciled');
+      } catch (error) {
+        succeeded = false;
+        deps.log.error({ err: error, guildId: guild.id }, 'authorized guild persistence failed');
+        reportError(error, { botId: deps.env.botId, guildId: guild.id });
+        deps.record({
+          action: 'server_lock.persistence_failed',
+          level: 'error',
+          message: `Authorized guild ${guild.name} could not be persisted`,
+          guildId: guild.id,
         });
-        await leaveUnauthorized(guild);
-        return;
       }
+    }
 
+    publishReady(succeeded);
+    return succeeded;
+  };
+
+  const reconcile = (): Promise<boolean> => {
+    if (!reconciliation) {
+      reconciliation = reconcileOnce().finally(() => {
+        reconciliation = null;
+      });
+    }
+    return reconciliation;
+  };
+
+  const markUnavailable = (): void => {
+    publishReady(false);
+  };
+
+  const handleReady = (): void => {
+    if (stopped) return;
+    void reconcile();
+    if (!timer) {
+      timer = setInterval(() => {
+        void reconcile();
+      }, 5 * 60_000);
+      timer.unref?.();
+    }
+  };
+
+  const handleGuildCreate = async (guild: Guild): Promise<void> => {
+    let authorized: boolean;
+    try {
+      authorized = await isGuildAuthorized(deps.supabase, guild.id, deps.env, deps.kv);
+    } catch (error) {
+      publishReady(false);
+      deps.log.error({ err: error, guildId: guild.id }, 'guild authorization check failed');
+      reportError(error, { botId: deps.env.botId, guildId: guild.id });
+      await leaveUnauthorized(guild, 'unavailable');
+      return;
+    }
+
+    if (!authorized) {
+      publishReady(false);
+      await leaveUnauthorized(guild, 'denied');
+      return;
+    }
+
+    try {
+      await upsertServer(deps.supabase, guild);
       await recordBotInviter(client, deps.supabase, guild.id);
-
       deps.record({
         action: 'server_lock.joined',
         level: 'info',
@@ -220,29 +259,54 @@ export function attachServerLock(client: Client, deps: ServerLockDeps): () => vo
         guildId: guild.id,
         meta: { memberCount: guild.memberCount },
       });
-
       deps.log.info({ guildId: guild.id, name: guild.name }, 'authorized guild joined');
-    } catch (err) {
-      deps.log.error({ err, guildId: guild.id }, 'server lock handler failed');
-      reportError(err, { botId: deps.env.botId, guildId: guild.id });
+    } catch (error) {
+      publishReady(false);
+      deps.log.error({ err: error, guildId: guild.id }, 'authorized guild persistence failed; retaining guild membership');
+      reportError(error, { botId: deps.env.botId, guildId: guild.id });
+      deps.record({
+        action: 'server_lock.persistence_failed',
+        level: 'error',
+        message: `Authorized guild ${guild.name} could not be persisted`,
+        guildId: guild.id,
+      });
     }
-  });
+  };
 
-  // Keep the server directory fresh without extra writes on every event.
-  client.on(Events.GuildDelete, async (guild) => {
+  const handleShardResume = (): void => {
+    if (!stopped) void reconcile();
+  };
+
+  const handleGuildDelete = (): void => {
     deps.record({
       action: 'server_lock.removed',
       level: 'info',
-      message: `Removed from ${guild.name ?? 'unknown'} (${guild.id})`,
-      guildId: guild.id,
+      message: 'Guild membership removed',
     });
-  });
+  };
 
-  return () => {
+  client.once(Events.ClientReady, handleReady);
+  client.on(Events.ShardResume, handleShardResume);
+  client.on(Events.Invalidated, markUnavailable);
+  client.on(Events.ShardReconnecting, markUnavailable);
+  client.on(Events.ShardDisconnect, markUnavailable);
+  client.on(Events.GuildCreate, handleGuildCreate);
+  client.on(Events.GuildDelete, handleGuildDelete);
+
+  const stop = (): void => {
     stopped = true;
     if (timer) {
       clearInterval(timer);
       timer = undefined;
     }
+    client.off(Events.ClientReady, handleReady);
+    client.off(Events.ShardResume, handleShardResume);
+    client.off(Events.Invalidated, markUnavailable);
+    client.off(Events.ShardReconnecting, markUnavailable);
+    client.off(Events.ShardDisconnect, markUnavailable);
+    client.off(Events.GuildCreate, handleGuildCreate);
+    client.off(Events.GuildDelete, handleGuildDelete);
   };
+
+  return { stop, reconcile, isReady: () => ready };
 }

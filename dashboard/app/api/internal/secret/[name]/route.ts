@@ -3,7 +3,16 @@ import { BOT_IDS, getAllowedRuntimeSecrets } from '@eiflow/secret-policy';
 
 import { isBotId } from '@/lib/bots';
 import { credentials } from '@/lib/demo';
-import { HMAC_SIGNATURE_HEADER, HMAC_TIMESTAMP_HEADER, verifyRequest } from '@/lib/hmac';
+import {
+  HMAC_BOT_ID_HEADER,
+  HMAC_GUILD_ID_HEADER,
+  HMAC_METHOD_HEADER,
+  HMAC_REQUEST_ID_HEADER,
+  HMAC_ROUTE_HEADER,
+  HMAC_SIGNATURE_HEADER,
+  HMAC_TIMESTAMP_HEADER,
+  verifyRequest,
+} from '@/lib/hmac';
 import { loadSecret } from '@/lib/secret-vault';
 import { consumeNonce } from '@/lib/internal-auth';
 
@@ -75,9 +84,24 @@ export async function POST(
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
-  const botId = request.headers.get('x-pe-bot-id') ?? '';
-  if (!isBotId(botId) || !NAME_PATTERN.test(name)) return NextResponse.json({ error: 'Invalid internal request' }, { status: 400 });
-  const secret = botSecret(botId);
+  const route = `/api/internal/secret/${encodeURIComponent(name)}`;
+  const headerBotId = request.headers.get(HMAC_BOT_ID_HEADER) ?? '';
+  const headerRequestId = request.headers.get(HMAC_REQUEST_ID_HEADER) ?? '';
+  const headerMethod = request.headers.get(HMAC_METHOD_HEADER) ?? '';
+  const headerRoute = request.headers.get(HMAC_ROUTE_HEADER) ?? '';
+  const guildId = request.headers.get(HMAC_GUILD_ID_HEADER);
+  if (
+    !isBotId(headerBotId) ||
+    !NAME_PATTERN.test(name) ||
+    !/^[A-Za-z0-9_-]{16,128}$/.test(headerRequestId) ||
+    headerMethod !== request.method ||
+    headerMethod !== 'POST' ||
+    headerRoute !== route ||
+    guildId !== null
+  ) {
+    return NextResponse.json({ error: 'Invalid internal request' }, { status: 400 });
+  }
+  const secret = botSecret(headerBotId);
   if (
     !secret ||
     !credentials().hmac ||
@@ -98,17 +122,36 @@ export async function POST(
     return NextResponse.json({ error: 'Body must be a JSON object' }, { status: 400 });
   }
   const payload = parsed as { request_id?: unknown; bot_id?: unknown };
-  if (payload.bot_id !== botId || typeof payload.request_id !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(payload.request_id)) {
+  if (
+    payload.bot_id !== headerBotId ||
+    payload.request_id !== headerRequestId ||
+    typeof payload.request_id !== 'string' ||
+    !/^[A-Za-z0-9_-]{16,128}$/.test(payload.request_id)
+  ) {
     return NextResponse.json({ error: 'Invalid internal payload' }, { status: 400 });
   }
 
   const timestamp = request.headers.get(HMAC_TIMESTAMP_HEADER) ?? '';
   const signature = request.headers.get(HMAC_SIGNATURE_HEADER) ?? '';
-  if (!verifyRequest(secret, body, timestamp, signature).ok) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+  const verification = verifyRequest(
+    secret,
+    body,
+    timestamp,
+    signature,
+    undefined,
+    {
+      method: request.method,
+      route,
+      botId: headerBotId,
+      requestId: headerRequestId,
+      guildId,
+    },
+  );
+  if (!verification.ok) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   const nonceAccepted = await consumeNonce(payload.request_id);
   if (!nonceAccepted) return NextResponse.json({ error: 'Replay rejected' }, { status: 409 });
 
-  if (!BOT_SECRET_ALLOWLIST[botId]?.includes(name)) return NextResponse.json({ error: 'Secret is not allowed for this bot' }, { status: 403 });
+  if (!BOT_SECRET_ALLOWLIST[headerBotId]?.includes(name)) return NextResponse.json({ error: 'Secret is not allowed for this bot' }, { status: 403 });
   try {
     const value = await loadSecret(name);
     if (value === null) return NextResponse.json({ error: 'Secret not configured' }, { status: 404 });

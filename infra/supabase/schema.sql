@@ -49,13 +49,40 @@ alter table public.users enable row level security;
 
 create table if not exists public.admin_users (
   user_id uuid primary key references public.users(id) on delete cascade,
-  role text not null check (role in ('master', 'operator', 'support')),
+  role text not null check (role in ('master', 'operator', 'support', 'OWNER', 'SUPER_ADMIN', 'SECURITY_ADMIN', 'TCG_ADMIN', 'SOFI_ADMIN', 'BOT_OPERATOR', 'AUDITOR')),
   created_at timestamptz not null default now(),
   created_by uuid references public.users(id),
   updated_at timestamptz not null default now()
 );
 
 alter table public.admin_users add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.dashboard_step_up_challenges (
+  challenge_id      text primary key check (challenge_id ~ '^[a-f0-9]{32}$'),
+  user_id           uuid not null references public.users(id) on delete cascade,
+  operation         text not null check (operation in ('guild.bot_state.write', 'guild.embed.send', 'security.remediate', 'secret.write', 'secret.reveal', 'guild.access.write', 'infrastructure.write')),
+  scope             text not null check (scope in ('global', 'guild')),
+  guild_id          text check (guild_id is null or guild_id ~ '^\d{17,20}$'),
+  delivery          text not null check (delivery in ('email', 'sms')),
+  roles             text[] not null check (cardinality(roles) > 0),
+  issued_at         timestamptz not null default now(),
+  expires_at        timestamptz not null,
+  consumed_at       timestamptz,
+  grant_expires_at  timestamptz,
+  attempts          integer not null default 0 check (attempts >= 0)
+);
+
+create unique index if not exists dashboard_step_up_active_idx
+  on public.dashboard_step_up_challenges (user_id, operation, scope, coalesce(guild_id, ''))
+  where consumed_at is null;
+create index if not exists dashboard_step_up_user_idx
+  on public.dashboard_step_up_challenges (user_id, expires_at)
+  where consumed_at is null;
+
+alter table public.dashboard_step_up_challenges enable row level security;
+revoke all on public.dashboard_step_up_challenges from anon, authenticated;
+create policy dashboard_step_up_self_select on public.dashboard_step_up_challenges
+  for select using (user_id = auth.uid());
 
 alter table public.admin_users enable row level security;
 revoke all on public.admin_users from anon, authenticated;
@@ -547,6 +574,131 @@ as $$
         and u.id = auth.uid()
     )
     or public.owns_guild(p_guild_id);
+$$;
+
+create or replace function public.dashboard_roles()
+returns text[]
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    array_agg(
+      case a.role
+        when 'master' then 'OWNER'
+        when 'operator' then 'BOT_OPERATOR'
+        when 'support' then 'AUDITOR'
+        else a.role
+      end
+      order by a.role
+    ),
+    array[]::text[]
+  )
+  from public.admin_users a
+  where a.user_id = auth.uid()
+    and a.role in ('master', 'operator', 'support', 'OWNER', 'SUPER_ADMIN', 'SECURITY_ADMIN', 'TCG_ADMIN', 'SOFI_ADMIN', 'BOT_OPERATOR', 'AUDITOR');
+$$;
+
+create or replace function public.issue_dashboard_step_up(
+  p_operation text,
+  p_scope text,
+  p_guild_id text,
+  p_delivery text
+)
+returns public.dashboard_step_up_challenges
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_roles text[];
+  required_roles text[];
+  issued public.dashboard_step_up_challenges%rowtype;
+begin
+  if p_operation not in ('guild.bot_state.write', 'guild.embed.send', 'security.remediate', 'secret.write', 'secret.reveal', 'guild.access.write', 'infrastructure.write')
+     or p_scope not in ('global', 'guild')
+     or p_delivery not in ('email', 'sms')
+     or (p_scope = 'guild' and (p_guild_id is null or p_guild_id !~ '^\d{17,20}$'))
+     or (p_scope = 'global' and p_guild_id is not null) then
+    raise exception 'invalid step-up request';
+  end if;
+  if p_operation in ('guild.bot_state.write', 'guild.embed.send') then
+    required_roles := array['OWNER', 'SUPER_ADMIN', 'SECURITY_ADMIN', 'TCG_ADMIN', 'SOFI_ADMIN'];
+  elsif p_operation = 'security.remediate' then
+    required_roles := array['OWNER', 'SUPER_ADMIN', 'SECURITY_ADMIN'];
+  else
+    required_roles := array['OWNER', 'SUPER_ADMIN', 'SECURITY_ADMIN'];
+  end if;
+
+  select coalesce(array_agg(case a.role
+    when 'master' then 'OWNER'
+    when 'operator' then 'BOT_OPERATOR'
+    when 'support' then 'AUDITOR'
+    else a.role
+  end order by a.role), array[]::text[])
+  into actor_roles
+  from public.admin_users a
+  where a.user_id = auth.uid()
+    and a.role in ('master', 'operator', 'support', 'OWNER', 'SUPER_ADMIN', 'SECURITY_ADMIN', 'TCG_ADMIN', 'SOFI_ADMIN', 'BOT_OPERATOR', 'AUDITOR');
+  if not (actor_roles && required_roles) then
+    raise exception 'step-up operation forbidden';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(auth.uid()::text || ':' || p_operation || ':' || p_scope || ':' || coalesce(p_guild_id, '')));
+  delete from public.dashboard_step_up_challenges
+  where user_id = auth.uid()
+    and operation = p_operation
+    and scope = p_scope
+    and coalesce(guild_id, '') = coalesce(p_guild_id, '')
+    and consumed_at is null;
+
+  insert into public.dashboard_step_up_challenges (
+    challenge_id, user_id, operation, scope, guild_id, delivery, roles, expires_at
+  ) values (
+    encode(gen_random_bytes(16), 'hex'), auth.uid(), p_operation, p_scope,
+    case when p_scope = 'guild' then p_guild_id else null end,
+    p_delivery, actor_roles, now() + interval '5 minutes'
+  )
+  returning * into issued;
+  return issued;
+end;
+$$;
+
+create or replace function public.consume_dashboard_step_up(p_challenge_id text, p_user_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated integer;
+begin
+  if p_challenge_id !~ '^[a-f0-9]{32}$' then
+    return false;
+  end if;
+  perform pg_advisory_xact_lock(hashtext(p_challenge_id));
+  update public.dashboard_step_up_challenges
+  set attempts = attempts + 1
+  where challenge_id = p_challenge_id
+    and user_id = p_user_id
+    and consumed_at is null
+    and expires_at > now()
+    and attempts < 5;
+  if not found then
+    return false;
+  end if;
+  update public.dashboard_step_up_challenges
+  set consumed_at = now(),
+      grant_expires_at = now() + interval '5 minutes'
+  where challenge_id = p_challenge_id
+    and user_id = p_user_id
+    and consumed_at is null
+    and expires_at > now()
+    and attempts <= 5;
+  get diagnostics updated = row_count;
+  return updated = 1;
+end;
 $$;
 
 revoke all on function public.has_guild_access(text) from public;

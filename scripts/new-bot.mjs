@@ -83,18 +83,22 @@ EMBED_COLOR=#${colour.toUpperCase()}
 DISCORD_TOKEN=
 DISCORD_CLIENT_ID=
 
-# Shared across all 8 bots
+# Shared across all bot services
 HMAC_SECRET=
 OWNER_IDS=
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-MONGODB_URI=
+EIFLOW_ENV=development
+DEV_GUILD_ID=1444582621417046071
+MAIN_GUILD_ID=848841415940898827
+DEV_AUTH_CHANNEL_ID=
+MASTER_DISCORD_ID=1479589523426902208
+DASHBOARD_URL=https://ei-point-dashboard.vercel.app
 MONGODB_DB=eiflow
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
+MONGODB_SECONDARY_DB=eipointsecurity
 SENTRY_DSN=
 LOG_LEVEL=info
 PORT=3000
+HEALTH_TOKEN=
+REDIS_DAILY_COMMAND_BUDGET=8000
 `,
 
   'src/index.ts': `import path from 'node:path';
@@ -125,15 +129,11 @@ import { registerCommands, UNIVERSAL_COMMANDS_DIR } from '@eiflow/shared';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const commandsDir = path.resolve(here, '..', 'src', 'commands');
 
-// Pass a guild ID to register instantly to one server (fast iteration).
-// Omit it for global registration (up to 1 hour to propagate).
-const guildId = process.argv[2];
+// Operator-facing registration is global-only. Development-only commands use
+// the canonical development guild when EIFLOW_ENV=development.
+const result = await registerCommands([commandsDir, UNIVERSAL_COMMANDS_DIR]);
 
-const result = await registerCommands([commandsDir, UNIVERSAL_COMMANDS_DIR], guildId);
-
-console.log(
-  \`[\${result.botId}] registered \${result.count} command(s) \${result.scope === 'guild' ? \`to guild \${guildId}\` : 'globally'}\`,
-);
+console.log(\`[\${result.botId}] registered \${result.count} command(s) globally\`);
 `,
 };
 

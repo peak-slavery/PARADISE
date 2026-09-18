@@ -40,6 +40,20 @@ const indexes = [
 
   { collection: 'card_transactions', name: 'cardtxn_user', key: { guild_id: 1, user_id: 1, created_at: -1 }, options: {} },
   { collection: 'card_transactions', name: 'cardtxn_reason', key: { reason: 1, created_at: -1 }, options: {} },
+  { collection: 'card_transactions', name: 'cardtxn_operation', key: { operation_id: 1 }, options: { unique: true, partialFilterExpression: { operation_id: { $exists: true } } } },
+
+  { collection: 'card_operations', name: 'cardop_id', key: { operation_id: 1 }, options: { unique: true } },
+  { collection: 'card_operations', name: 'cardop_guild_actor_kind', key: { guild_id: 1, actor_user_id: 1, kind: 1, created_at: -1 }, options: {} },
+
+  { collection: 'command_idempotency', name: 'commandidem_key_bot', key: { command_key: 1, bot_id: 1 }, options: { unique: true } },
+  { collection: 'command_idempotency', name: 'commandidem_guild_user', key: { guild_id: 1, user_id: 1, updated_at: -1 }, options: {} },
+
+  { collection: 'card_outbox', name: 'cardoutbox_id', key: { event_id: 1 }, options: { unique: true } },
+  { collection: 'card_outbox', name: 'cardoutbox_due', key: { status: 1, available_at: 1, created_at: 1 }, options: {} },
+  { collection: 'card_outbox', name: 'cardoutbox_aggregate', key: { guild_id: 1, aggregate_type: 1, aggregate_id: 1, created_at: -1 }, options: {} },
+
+  { collection: 'card_pack_access', name: 'cardpackaccess_id', key: { pack_id: 1 }, options: { unique: true } },
+  { collection: 'card_pack_access', name: 'cardpackaccess_mode', key: { access_mode: 1, active: 1 }, options: {} },
 ];
 
 module.exports = {

@@ -1,52 +1,76 @@
 #!/usr/bin/env node
 /**
- * Fail-closed daily production monitor.
+ * Fail-closed production monitor.
  *
- * Requires authenticated health endpoints for the dashboard and every bot.
- * Any non-2xx response, missing payload, or failed dependency is an error.
+ * The dashboard is checked separately from the eight isolated bots. Bot probes
+ * run through the independent watchdog so identity, ordered recovery stages,
+ * miss progression, and redacted durable state remain consistent.
  */
-const required = (name) => {
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { runWatchdog } from './watchdog.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function required(name) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
-};
+}
 
-const services = [
-  ['dashboard', required('DASHBOARD_URL'), required('DASHBOARD_HEALTH_TOKEN')],
-  ['shanks', required('SHANKS_URL'), required('HEALTH_TOKEN')],
-  ['sanji', required('SANJI_URL'), required('HEALTH_TOKEN')],
-  ['zoro', required('ZORO_URL'), required('HEALTH_TOKEN')],
-  ['boahancock', required('BOAHANCOCK_URL'), required('HEALTH_TOKEN')],
-  ['nami', required('NAMI_URL'), required('HEALTH_TOKEN')],
-  ['luffy', required('LUFFY_URL'), required('HEALTH_TOKEN')],
-  ['niko-robin', required('NIKO_ROBIN_URL'), required('HEALTH_TOKEN')],
-  ['cyrene', required('CYRENE_URL'), required('HEALTH_TOKEN')],
-];
+function optional(name) {
+  return process.env[name]?.trim() || undefined;
+}
 
-let failures = 0;
-for (const [name, baseUrl, token] of services) {
+async function checkDashboard() {
   try {
-    const response = await fetch(name === 'dashboard' ? new URL('/api/health', baseUrl) : new URL('/health', baseUrl), {
-      headers: { authorization: `Bearer ${token}` },
+    const url = new URL('/api/health', required('DASHBOARD_URL'));
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${required('DASHBOARD_HEALTH_TOKEN')}` },
       signal: AbortSignal.timeout(10_000),
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (payload.status !== 'ok') throw new Error(`status ${payload.status ?? 'unknown'}`);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.status !== 'ok') {
+      throw new Error(`dashboard readiness HTTP ${response.status}`);
+    }
     const connections = payload.db_connections ?? {};
     for (const dependency of ['supabase', 'mongo', 'redis']) {
-      if (connections[dependency] !== true) throw new Error(`${dependency} unavailable`);
+      if (connections[dependency] !== true) throw new Error(`dashboard ${dependency} unavailable`);
     }
-    console.log(`PASS ${name}`);
+    console.log('PASS dashboard');
+    return { ok: true };
   } catch (error) {
-    failures += 1;
-    console.error(`FAIL ${name} — ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`FAIL dashboard — ${error instanceof Error ? error.message : String(error)}`);
+    return { ok: false };
   }
 }
 
-if (failures) {
-  console.error(`production monitor failed: ${failures}/${services.length} services degraded`);
-  process.exitCode = 1;
-} else {
-  console.log(`production monitor passed: ${services.length}/${services.length} services ready`);
+async function main() {
+  const dashboard = await checkDashboard();
+
+  const tokenJson = required('BOT_HEALTH_TOKENS_JSON');
+  const tokens = JSON.parse(tokenJson);
+  const statePath = optional('WATCHDOG_STATE_PATH') ?? path.join(root, '.watchdog-state', 'state.json');
+  const auditPath = optional('WATCHDOG_AUDIT_PATH') ?? path.join(root, '.watchdog-state', 'audit.json');
+  const summaryPath = optional('WATCHDOG_SUMMARY_PATH') ?? path.join(root, '.watchdog-state', 'summary.md');
+  const result = await runWatchdog({ tokens, statePath, auditPath, summaryPath });
+
+  for (const item of result.results) {
+    console.log(`${item.ok ? 'PASS' : 'FAIL'} ${item.botId} ${item.stage} ${item.classification}`);
+  }
+
+  const failures = result.results.filter((item) => !item.ok);
+  if (failures.length || !dashboard.ok) {
+    const reason = !dashboard.ok ? 'dashboard unavailable' : `${failures.length}/${result.results.length} bots not ready`;
+    console.error(`production monitor failed: ${reason}`);
+    process.exitCode = 1;
+  } else {
+    console.log(`production monitor passed: ${result.results.length}/${result.results.length} bots ready`);
+  }
+}
+
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectRun) {
+  await main();
 }

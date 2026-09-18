@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { Events, type Client } from 'discord.js';
 import type { Env } from './env.js';
 import type { Logger } from './logger.js';
 import type { Kv } from './redis.js';
@@ -16,6 +17,9 @@ export interface HealthDeps {
   queue: TaskQueue;
   /** Documents written in the last hour (free-tier write guardrail). */
   writes1h: () => number;
+  /** True only after the server-lock reconciliation has completed. */
+  guildLockReady: () => boolean;
+  gatewayReady: () => boolean;
 }
 
 export interface HealthBindOptions {
@@ -25,6 +29,38 @@ export interface HealthBindOptions {
   version: string;
   startedAt: number;
   log: Logger;
+}
+
+export interface GuildLockReadiness {
+  isReady: () => boolean;
+  stop: () => void;
+}
+
+export function attachGuildLockReadiness(
+  client: Client,
+  isReady: () => boolean,
+): GuildLockReadiness {
+  let ready = false;
+  const refresh = (): void => {
+    ready = isReady();
+  };
+  const setUnavailable = (): void => {
+    ready = false;
+  };
+  client.once(Events.ClientReady, refresh);
+  client.on(Events.Invalidated, setUnavailable);
+  client.on(Events.ShardReconnecting, setUnavailable);
+  client.on(Events.ShardDisconnect, setUnavailable);
+
+  return {
+    isReady: () => ready,
+    stop: () => {
+      client.off(Events.ClientReady, refresh);
+      client.off(Events.Invalidated, setUnavailable);
+      client.off(Events.ShardReconnecting, setUnavailable);
+      client.off(Events.ShardDisconnect, setUnavailable);
+    },
+  };
 }
 
 export interface HealthServer extends Server {
@@ -41,6 +77,8 @@ export interface HealthPayload {
   redis_capacity: import('./capacity.js').CapacitySnapshot | null;
   db_write_count_1h: number;
   db_connections: { supabase: boolean; mongo: boolean; redis: boolean };
+  gateway_ready: boolean;
+  guild_lock_ready: boolean;
   queue: { active: number; pending: number; dropped: number };
 }
 
@@ -49,6 +87,40 @@ const HEALTH_CACHE_MS = 10_000;
 function hasDiagnosticsAccess(req: IncomingMessage): boolean {
   const token = process.env.HEALTH_TOKEN?.trim();
   return Boolean(token && req.headers.authorization === `Bearer ${token}`);
+}
+
+export interface GatewayReadiness {
+  isReady: () => boolean;
+  stop: () => void;
+}
+
+/** Track Discord Gateway readiness independently of process liveness. */
+export function attachGatewayReadiness(client: Client): GatewayReadiness {
+  let ready = false;
+
+  const setReady = (): void => {
+    ready = true;
+  };
+  const setUnavailable = (): void => {
+    ready = false;
+  };
+
+  client.once(Events.ClientReady, setReady);
+  client.on(Events.ShardResume, setReady);
+  client.on(Events.Invalidated, setUnavailable);
+  client.on(Events.ShardReconnecting, setUnavailable);
+  client.on(Events.ShardDisconnect, setUnavailable);
+
+  return {
+    isReady: () => ready,
+    stop: () => {
+      client.off(Events.ClientReady, setReady);
+      client.off(Events.ShardResume, setReady);
+      client.off(Events.Invalidated, setUnavailable);
+      client.off(Events.ShardReconnecting, setUnavailable);
+      client.off(Events.ShardDisconnect, setUnavailable);
+    },
+  };
 }
 
 async function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T | false> {
@@ -87,6 +159,8 @@ export async function buildHealthPayload(deps: HealthDeps): Promise<HealthPayloa
     pingMongo(deps.getMongo),
     deps.kv.ping(),
   ]);
+  const gatewayReady = deps.gatewayReady();
+  const guildLockReady = deps.guildLockReady();
 
   return {
     status: 'ok',
@@ -98,6 +172,8 @@ export async function buildHealthPayload(deps: HealthDeps): Promise<HealthPayloa
     redis_capacity: deps.kv.capacity?.() ?? null,
     db_write_count_1h: deps.writes1h(),
     db_connections: { supabase, mongo, redis },
+    gateway_ready: gatewayReady,
+    guild_lock_ready: guildLockReady,
     queue: deps.queue.stats,
   };
 }
@@ -148,7 +224,8 @@ export function startHealthServer(options: HealthBindOptions): Promise<HealthSer
     void healthPromise
       .then((payload) => {
         const anyDown = Object.values(payload.db_connections).some((v) => v === false);
-        const status = anyDown ? 'degraded' : 'ok';
+        const notReady = !payload.gateway_ready || !payload.guild_lock_ready;
+        const status = anyDown || notReady ? 'degraded' : 'ok';
         // Liveness vs readiness. An unauthenticated probe (Render, uptime
         // monitors) asks "is this process alive?", which must NOT depend on a
         // dependency being reachable: a transient database blip would
@@ -157,7 +234,7 @@ export function startHealthServer(options: HealthBindOptions): Promise<HealthSer
         // still reports `degraded`, and authenticated callers keep the true
         // readiness signal (503) so monitoring is not blinded.
         send(
-          detailed && anyDown ? 503 : 200,
+          detailed && (anyDown || notReady) ? 503 : 200,
           JSON.stringify(detailed ? { ...payload, status } : { status }),
         );
       })

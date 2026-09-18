@@ -11,6 +11,7 @@ import type { Env } from './env.js';
 import type { Logger } from './logger.js';
 import type { Kv } from './redis.js';
 import type { TypedSupabase } from './db/supabase.js';
+import type { ClientSession } from 'mongodb';
 import type { MongoCollections } from './db/mongo.js';
 import type { EmbedFactory } from './embed.js';
 import type { TaskQueue } from './queue.js';
@@ -38,6 +39,8 @@ export interface BotServices {
   mongo(): Promise<MongoCollections | null>;
   /** Throws ServiceUnavailableError when Mongo is down. */
   requireMongo(): Promise<MongoCollections>;
+  /** Runs Luffy's multi-document economy operations on Mongo's authoritative session. */
+  executeCardTransaction<T>(work: (session: import('mongodb').ClientSession) => Promise<T>): Promise<T>;
   /** Throws ServiceUnavailableError when Supabase is down. */
   requireSupabase(): TypedSupabase;
   isAuthorized(guildId: string): Promise<boolean>;

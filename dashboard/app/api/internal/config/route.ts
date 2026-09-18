@@ -3,11 +3,20 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { BOTS, getBot, isBotId } from '@/lib/bots';
 import { credentials } from '@/lib/demo';
 import {
+  DEFAULT_SKEW_SECONDS,
+  HMAC_BOT_ID_HEADER,
+  HMAC_GUILD_ID_HEADER,
+  HMAC_METHOD_HEADER,
+  HMAC_REQUEST_ID_HEADER,
+  HMAC_ROUTE_HEADER,
   HMAC_SIGNATURE_HEADER,
   HMAC_TIMESTAMP_HEADER,
-  signRequest,
+  signRequestWithContext,
   verifyRequest,
+  type HmacRequestContext,
 } from '@/lib/hmac';
+import { isApprovedGuild } from '@eiflow/shared';
+
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
 import type { ConfigValues } from '@/lib/types';
 
@@ -85,11 +94,10 @@ async function readBoundedBody(request: NextRequest): Promise<string | null> {
 /**
  * Internal bot -> dashboard config sync.
  *
- * Bots have no dashboard session, so they authenticate with an HMAC signature
- * instead: `hex(HMAC_SHA256(HMAC_SECRET, "<unixSeconds>.<rawBody>"))` sent as
- * `x-pe-timestamp` + `x-pe-signature`, valid inside a 300s skew window. This is
- * the same construction the bots use in `@eiflow/shared`, so one secret signs
- * traffic in both directions.
+ * Bots have no dashboard session, so they authenticate with an HMAC signature.
+ * The signature covers POST, the canonical route, bot identity, request ID,
+ * guild ID, timestamp, and the untouched raw body. Replay protection is handled
+ * by the database nonce consumed by the config RPC.
  *
  * The write uses the service-role client (RLS bypass) because the actor is a
  * trusted service, not a signed-in owner — which is exactly why the signature
@@ -127,10 +135,33 @@ export async function POST(request: NextRequest) {
   const guildId = typeof payload.guild_id === 'string' ? payload.guild_id : '';
   const botId = typeof payload.bot_id === 'string' ? payload.bot_id : '';
   const requestId = typeof payload.request_id === 'string' ? payload.request_id : '';
+  const headerBotId = request.headers.get(HMAC_BOT_ID_HEADER) ?? '';
+  const headerGuildId = request.headers.get(HMAC_GUILD_ID_HEADER) ?? '';
+  const headerRequestId = request.headers.get(HMAC_REQUEST_ID_HEADER) ?? '';
+  const headerMethod = request.headers.get(HMAC_METHOD_HEADER) ?? '';
+  const headerRoute = request.headers.get(HMAC_ROUTE_HEADER) ?? '';
+  const route = '/api/internal/config';
+  const context: HmacRequestContext = {
+    method: request.method.toUpperCase(),
+    route,
+    botId,
+    requestId,
+    guildId,
+  };
 
-  if (!/^\d{17,20}$/.test(guildId) || !isBotId(botId) || !/^[A-Za-z0-9_-]{16,128}$/.test(requestId)) {
+  if (
+    !/^\d{17,20}$/.test(guildId) ||
+    !isBotId(botId) ||
+    !/^[A-Za-z0-9_-]{16,128}$/.test(requestId) ||
+    !isApprovedGuild(guildId, process.env.EIFLOW_ENV) ||
+    headerBotId !== botId ||
+    headerGuildId !== guildId ||
+    headerRequestId !== requestId ||
+    headerMethod !== request.method ||
+    headerRoute !== route
+  ) {
     return NextResponse.json(
-      { error: 'Expected valid `guild_id`, `bot_id`, and unique `request_id`' },
+      { error: 'Expected valid, parity-matched internal request context' },
       { status: 400 },
     );
   }
@@ -140,6 +171,8 @@ export async function POST(request: NextRequest) {
     rawBody,
     request.headers.get(HMAC_TIMESTAMP_HEADER),
     request.headers.get(HMAC_SIGNATURE_HEADER),
+    DEFAULT_SKEW_SECONDS,
+    context,
   );
   if (!verification.ok) {
     return NextResponse.json({ error: 'Invalid signature', reason: verification.reason }, { status: 401 });
@@ -206,14 +239,22 @@ export async function POST(request: NextRequest) {
   // Echo a fresh signature so a bot can verify round-trip parity in tests.
   const echoBody = JSON.stringify({ ok: true, guild_id: guildId, bot_id: botId });
   const echoTimestamp = Math.floor(Date.now() / 1000);
-  const echoSignature = signRequest(secretForBot(botId), echoBody, echoTimestamp);
+  const echoContext: HmacRequestContext = { method: 'POST', route, botId, requestId, guildId };
+  const echoSignature = signRequestWithContext(secretForBot(botId), echoBody, echoContext, echoTimestamp);
+  const receivedAt = Number(request.headers.get(HMAC_TIMESTAMP_HEADER));
 
   return NextResponse.json(
-    { ok: true, guild_id: guildId, bot_id: botId, config: clean, receivedAt: verification.timestamp },
+    { ok: true, guild_id: guildId, bot_id: botId, config: clean, receivedAt },
     {
-      headers: echoSignature
-        ? { [HMAC_TIMESTAMP_HEADER]: String(echoTimestamp), [HMAC_SIGNATURE_HEADER]: echoSignature }
-        : undefined,
+      headers: {
+        [HMAC_METHOD_HEADER]: 'POST',
+        [HMAC_ROUTE_HEADER]: route,
+        [HMAC_BOT_ID_HEADER]: botId,
+        [HMAC_REQUEST_ID_HEADER]: requestId,
+        [HMAC_GUILD_ID_HEADER]: guildId,
+        [HMAC_TIMESTAMP_HEADER]: String(echoTimestamp),
+        [HMAC_SIGNATURE_HEADER]: echoSignature,
+      },
     },
   );
 }

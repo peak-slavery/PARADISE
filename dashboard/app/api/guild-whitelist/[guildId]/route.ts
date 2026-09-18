@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { authorizationResponse } from '@/lib/api-response';
+import { isApprovedGuild } from '@eiflow/shared';
+
 import { authorizeMaster, isDiscordSnowflake } from '@/lib/authz';
 import { invalidateWhitelistCache } from '@/lib/interlink';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
@@ -13,8 +15,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!access.ok) return authorizationResponse(access);
   const { guildId } = await params;
   if (!isDiscordSnowflake(guildId)) return NextResponse.json({ error: 'Invalid guild id' }, { status: 400 });
-  if (guildId === process.env.DEV_GUILD_ID?.trim() || guildId === process.env.MAIN_GUILD_ID?.trim()) {
-    return NextResponse.json({ error: 'Configured dev/main guilds are immutable' }, { status: 409 });
+  if (isApprovedGuild(guildId, process.env.EIFLOW_ENV)) {
+    return NextResponse.json({ error: 'Canonical guilds are immutable' }, { status: 409 });
   }
   const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: 'Dashboard backend is unavailable' }, { status: 503 });
