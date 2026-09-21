@@ -14,7 +14,7 @@
   "dependencies": {
     "@eiflow/shared": "*",
     "discord.js": "^14.15.3",
-    "mongodb": "^6.9.0"
+    "mongodb": "^7.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
